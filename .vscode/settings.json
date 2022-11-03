@@ -1,0 +1,25 @@
+{
+  "editor.tabSize": 2,
+  "editor.defaultFormatter": "dbaeumer.vscode-eslint",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.addMissingImports": true,
+    "source.fixAll.eslint": true
+  },
+  // Overriding multiple language files isn't available on VScode yet
+  "[json]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "search.exclude": {
+    "package-lock.json": true,
+    "yarn.lock.json": true,
+    "pnpm-lock.yaml": true
+  },
+  "files.trimTrailingWhitespace": true,
+  "files.eol": "auto"
+}

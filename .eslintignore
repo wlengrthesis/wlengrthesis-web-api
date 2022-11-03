@@ -1,0 +1,35 @@
+# compiled output
+/dist
+/node_modules
+/db
+
+# logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+
+# lock files
+package-lock.json
+yarn.lock.json
+pnpm-lock.yaml
+
+# IDEs and editors
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
