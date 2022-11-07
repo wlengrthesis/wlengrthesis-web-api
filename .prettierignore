@@ -1,7 +1,6 @@
 # compiled output
 /dist
 /node_modules
-/db
 
 # logs
 logs
@@ -14,11 +13,19 @@ lerna-debug.log*
 
 # OS
 .DS_Store
+*.pem
 
 # lock files
 package-lock.json
 yarn.lock.json
 pnpm-lock.yaml
+
+# local env files
+.env
+.env*.local
+
+# typescript
+*.tsbuildinfo
 
 # IDEs and editors
 .idea

@@ -15,6 +15,9 @@
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
+  "[prisma]": {
+    "editor.defaultFormatter": "Prisma.prisma"
+  },
   "search.exclude": {
     "package-lock.json": true,
     "yarn.lock.json": true,
