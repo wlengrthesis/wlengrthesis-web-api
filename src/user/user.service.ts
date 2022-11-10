@@ -1,26 +1,18 @@
 import { ForbiddenException, Injectable } from '@nestjs/common'
 import { User, Prisma } from '@prisma/client'
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime'
-import { PrismaClientService } from 'src/prisma-client/prisma-client.service'
+import { PrismaClientService } from '../prisma-client/prisma-client.service'
 
 @Injectable()
 export class UserService {
   constructor(private prisma: PrismaClientService) {}
 
   async getOneById(id: Prisma.UserWhereUniqueInput['id']): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where: {
-        id,
-      },
-    })
+    return this.prisma.user.findUnique({ where: { id } })
   }
 
   async getOneByEmail(email: Prisma.UserWhereUniqueInput['email']): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where: {
-        email,
-      },
-    })
+    return this.prisma.user.findUnique({ where: { email } })
   }
 
   async getAll(params: {
@@ -40,41 +32,51 @@ export class UserService {
     })
   }
 
-  async create(data: Prisma.UserCreateInput): Promise<User> {
+  async create(
+    email: Prisma.UserCreateInput['email'],
+    hashedPassword: Prisma.UserCreateInput['hashedPassword']
+  ): Promise<User> {
     return this.prisma.user
       .create({
-        data,
+        data: {
+          email,
+          hashedPassword,
+        },
       })
       .catch(error => {
-        if (error instanceof PrismaClientKnownRequestError && error.code === 'P2002') {
-          throw new ForbiddenException('Credentials incorrect')
+        if (error instanceof PrismaClientKnownRequestError) {
+          // Error code P2002: Unique constraint failed - https://www.prisma.io/docs/reference/api-reference/error-reference#p2002
+          if (error.code === 'P2002') throw new ForbiddenException('Credentials incorrect')
         }
         throw error
       })
   }
 
-  async update(params: { where: Prisma.UserWhereUniqueInput; data: Prisma.UserUpdateInput }): Promise<User> {
-    const { where, data } = params
+  async updateRefreshToken(
+    id: Prisma.UserWhereUniqueInput['id'],
+    hashedRefreshToken: Prisma.UserUpdateInput['hashedRefreshToken']
+  ): Promise<User> {
     return this.prisma.user.update({
-      data,
-      where,
+      where: { id },
+      data: { hashedRefreshToken },
     })
   }
 
-  async updateMany(params: {
-    where: Prisma.UserWhereInput
-    data: Prisma.XOR<Prisma.UserUpdateManyMutationInput, Prisma.UserUncheckedUpdateManyInput>
-  }): Promise<void> {
-    const { where, data } = params
-    this.prisma.user.updateMany({
-      where,
-      data,
+  async clearRefreshToken(id: Prisma.UserWhereUniqueInput['id']): Promise<User> {
+    return this.prisma.user.update({
+      where: {
+        id,
+        hashedRefreshToken: {
+          not: null,
+        },
+      },
+      data: {
+        hashedRefreshToken: null,
+      },
     })
   }
 
   async delete(where: Prisma.UserWhereUniqueInput): Promise<User> {
-    return this.prisma.user.delete({
-      where,
-    })
+    return this.prisma.user.delete({ where })
   }
 }

@@ -1,8 +1,8 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common'
-import { Public, GetCurrentUser } from '../common/decorators'
-import { AuthDto, Tokens } from './auth.model'
+import { AuthDto, Tokens } from './auth.types'
 import { AuthService } from './auth.service'
-import { RefreshTokenGuard } from '../common/guards/refresh-token.guard'
+import { Public, GetCurrentUser } from './decorators'
+import { RefreshTokenGuard } from './guards'
 
 @Controller('auth')
 export class AuthController {
@@ -28,7 +28,7 @@ export class AuthController {
     return this.authService.logout(userId)
   }
 
-  @Public()
+  @Public() // bypass global AccessTokenGuard
   @UseGuards(RefreshTokenGuard)
   @Post('refresh')
   @HttpCode(HttpStatus.OK)

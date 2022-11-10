@@ -2,9 +2,9 @@ import { ForbiddenException, Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import * as argon from 'argon2'
-import { AuthDto, Tokens, JwtPayload } from './auth.model'
-import { UserService } from './../user/user.service'
 import { randomBytes } from 'crypto'
+import { AuthDto, Tokens, JwtPayload } from './auth.types'
+import { UserService } from './../user/user.service'
 
 @Injectable()
 export class AuthService {
@@ -46,12 +46,7 @@ export class AuthService {
       salt: randomBytes(16),
     })
 
-    await this.userService.update({
-      where: {
-        id: userId,
-      },
-      data: { hashedRefreshToken },
-    })
+    await this.userService.updateRefreshToken(userId, hashedRefreshToken)
   }
 
   async signUpLocal(dto: AuthDto): Promise<Tokens> {
@@ -60,13 +55,10 @@ export class AuthService {
       salt: randomBytes(16),
     })
 
-    const user = await this.userService.create({
-      email: dto.email,
-      hashedPassword,
-    })
+    const { id, email } = await this.userService.create(dto.email, hashedPassword)
 
-    const tokens = await this.getTokens(user.id, user.email)
-    await this.updateRefreshTokenHash(user.id, tokens.refresh_token)
+    const tokens = await this.getTokens(id, email)
+    await this.updateRefreshTokenHash(id, tokens.refresh_token)
 
     return tokens
   }
@@ -86,17 +78,7 @@ export class AuthService {
   }
 
   async logout(userId: number): Promise<boolean> {
-    await this.userService.updateMany({
-      where: {
-        id: userId,
-        hashedRefreshToken: {
-          not: null,
-        },
-      },
-      data: {
-        hashedRefreshToken: null,
-      },
-    })
+    await this.userService.clearRefreshToken(userId)
     return true
   }
 
@@ -104,8 +86,8 @@ export class AuthService {
     const user = await this.userService.getOneById(userId)
     if (!user || !user.hashedRefreshToken) throw new ForbiddenException('Access Denied')
 
-    const rtMatches = await argon.verify(user.hashedRefreshToken, refreshToken)
-    if (!rtMatches) throw new ForbiddenException('Access Denied')
+    const refreshTokensMatches = await argon.verify(user.hashedRefreshToken, refreshToken)
+    if (!refreshTokensMatches) throw new ForbiddenException('Access Denied')
 
     const tokens = await this.getTokens(user.id, user.email)
     await this.updateRefreshTokenHash(user.id, tokens.refresh_token)

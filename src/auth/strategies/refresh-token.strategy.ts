@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { PassportStrategy } from '@nestjs/passport'
 import { ExtractJwt, Strategy } from 'passport-jwt'
 import { Request } from 'express'
-import { JwtPayload, JwtPayloadWithRefreshToken } from '../auth.model'
+import { JwtPayload, JwtPayloadWithRefreshToken } from '../auth.types'
 
 @Injectable()
 export class RefreshTokenStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
@@ -11,7 +11,6 @@ export class RefreshTokenStrategy extends PassportStrategy(Strategy, 'jwt-refres
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: config.get<string>('JWT_REFRESH_TOKEN_SECRET'),
-      ignoreExpiration: false,
       passReqToCallback: true,
     })
   }
@@ -19,7 +18,7 @@ export class RefreshTokenStrategy extends PassportStrategy(Strategy, 'jwt-refres
   validate(req: Request, payload: JwtPayload): JwtPayloadWithRefreshToken {
     const refresh_token = req?.get('authorization')?.replace('Bearer', '').trim()
 
-    if (!refresh_token) throw new ForbiddenException('Refresh token malformed')
+    if (!refresh_token) throw new ForbiddenException('Access Denied')
 
     return {
       ...payload,
