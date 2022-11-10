@@ -46,7 +46,7 @@ export class UserService {
       .catch(error => {
         if (error instanceof PrismaClientKnownRequestError) {
           // Error code P2002: Unique constraint failed - https://www.prisma.io/docs/reference/api-reference/error-reference#p2002
-          if (error.code === 'P2002') throw new ForbiddenException('Credentials incorrect')
+          if (error.code === 'P2002') throw new ForbiddenException('Prismatic Denial')
         }
         throw error
       })

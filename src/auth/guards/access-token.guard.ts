@@ -2,6 +2,7 @@ import { ExecutionContext, Injectable } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { AuthGuard } from '@nestjs/passport'
 import { Observable } from 'rxjs'
+import { ALLOW_UNAUTHORIZED_REQUEST } from '../decorators'
 
 @Injectable()
 export class AccessTokenGuard extends AuthGuard('jwt') {
@@ -10,9 +11,12 @@ export class AccessTokenGuard extends AuthGuard('jwt') {
   }
 
   canActivate(context: ExecutionContext): boolean | Promise<boolean> | Observable<boolean> {
-    const isPublic = this.reflector.getAllAndOverride('isPublic', [context.getHandler(), context.getClass()])
+    const isUnauthorizedRequestAllowed = this.reflector.getAllAndOverride(ALLOW_UNAUTHORIZED_REQUEST, [
+      context.getHandler(),
+      context.getClass(),
+    ])
 
-    if (isPublic) return true
+    if (isUnauthorizedRequestAllowed) return true
 
     return super.canActivate(context)
   }
