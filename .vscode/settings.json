@@ -3,8 +3,9 @@
   "editor.defaultFormatter": "dbaeumer.vscode-eslint",
   "editor.formatOnSave": true,
   "editor.codeActionsOnSave": {
-    "source.addMissingImports": true,
-    "source.fixAll.eslint": true
+    "source.formatDocument": true,
+    "source.fixAll.eslint": true,
+    "source.addMissingImports": true
   },
   // Overriding multiple language files isn't available on VScode yet
   "[json]": {
