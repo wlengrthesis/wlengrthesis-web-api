@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common'
+import { ConflictException, Injectable } from '@nestjs/common'
 import { User, Prisma } from '@prisma/client'
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime'
 import { PrismaClientService } from '../prisma-client/prisma-client.service'
@@ -46,7 +46,7 @@ export class UserService {
       .catch(error => {
         if (error instanceof PrismaClientKnownRequestError) {
           // Error code P2002: Unique constraint failed - https://www.prisma.io/docs/reference/api-reference/error-reference#p2002
-          if (error.code === 'P2002') throw new ForbiddenException('Prismatic Denial')
+          if (error.code === 'P2002') throw new ConflictException('Bad entry')
         }
         throw error
       })
