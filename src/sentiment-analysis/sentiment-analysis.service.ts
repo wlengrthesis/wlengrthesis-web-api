@@ -1,5 +1,15 @@
 import { Injectable } from '@nestjs/common'
-import { oneHot, sequential, tensor1d, tensor2d, layers } from '@tensorflow/tfjs-node'
+import {
+  oneHot,
+  sequential,
+  tensor1d,
+  tensor2d,
+  layers,
+  Sequential,
+  Tensor2D,
+  Tensor,
+  Rank,
+} from '@tensorflow/tfjs-node'
 import { createReadStream } from 'fs'
 import { parse } from 'csv-parse'
 import { Dataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types'
@@ -12,28 +22,37 @@ export class SentimentAnalysisService {
     url: 'dist/assets/dataset/amazon_products_consumer_reviews_dataset.csv',
     oneHotTensorDepth: 3, // based on number of possible values returned by encodeSentiment func
     maxSequenceLength: 32,
+    trainedModel: 'dist/assets/trained-model',
   } as const
 
   private dataset: Dataset[] = []
+  private model: Sequential
 
   constructor() {
     this.loadDataset()
   }
 
   private createModel(vocabularySize: number) {
-    const model = sequential()
+    this.model = sequential()
 
-    model.add(
+    this.model.add(
       layers.embedding({ inputDim: vocabularySize, outputDim: 16, inputLength: this.datasetConfig.maxSequenceLength })
     )
-    model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }))
-    model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64 }) }))
-    model.add(layers.flatten())
-    model.add(layers.dense({ units: 24, activation: 'relu' }))
-    model.add(layers.dense({ units: 3, activation: 'softmax' }))
+    this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }))
+    this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }))
+    this.model.add(layers.globalAveragePooling1d())
+    this.model.add(layers.dense({ units: 24, activation: 'relu' }))
+    this.model.add(layers.dense({ units: 3, activation: 'softmax' }))
 
-    model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] })
-    model.summary()
+    this.model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] })
+    this.model.summary()
+  }
+
+  private trainModel(sequences: Tensor2D, labels: Tensor<Rank>) {
+    this.model.fit(sequences, labels, { epochs: 10, validationSplit: 0.2 })
+  }
+  private async saveModel() {
+    await this.model.save(join('file://', process.cwd(), this.datasetConfig.trainedModel))
   }
 
   private loadDataset() {
@@ -87,15 +106,16 @@ export class SentimentAnalysisService {
       )
       return this.encodeSentiment(sentiment)
     })
-    oneHot(tensor1d(sentiments, 'int32'), this.datasetConfig.oneHotTensorDepth).print()
+    const labels = oneHot(tensor1d(sentiments, 'int32'), this.datasetConfig.oneHotTensorDepth)
 
     const sequences = this.padSequences(
       tokeniser(filteredDataset.map(dataset => this.cleanText(dataset['reviews.text']))).sequences,
       this.datasetConfig.maxSequenceLength
     )
-    tensor2d(sequences).print()
 
     this.createModel(sequences.length)
+    this.trainModel(tensor2d(sequences), labels)
+    this.saveModel()
   }
 
   private determineSentiment(
