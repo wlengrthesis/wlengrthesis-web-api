@@ -50,7 +50,9 @@ export class SentimentAnalysisService {
 
   private async trainModel(sequences: Tensor2D, labels: Tensor<Rank>) {
     await this.model.fit(sequences, labels, { epochs: 10, validationSplit: 0.2 })
+    this.saveModel()
   }
+
   private async saveModel() {
     await this.model.save(join('file://', process.cwd(), this.datasetConfig.trainedModel))
   }
@@ -115,7 +117,6 @@ export class SentimentAnalysisService {
 
     this.createModel(sequences.length)
     this.trainModel(tensor2d(sequences), labels)
-    this.saveModel()
   }
 
   private determineSentiment(
