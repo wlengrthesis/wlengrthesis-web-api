@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
-import { oneHot, tensor1d, tensor2d } from '@tensorflow/tfjs-node'
-import { createReadStream, writeFileSync } from 'fs'
+import { oneHot, sequential, tensor1d, tensor2d, layers } from '@tensorflow/tfjs-node'
+import { createReadStream } from 'fs'
 import { parse } from 'csv-parse'
 import { Dataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types'
 import { join } from 'path'
@@ -20,6 +20,22 @@ export class SentimentAnalysisService {
     this.loadDataset()
   }
 
+  private createModel(vocabularySize: number) {
+    const model = sequential()
+
+    model.add(
+      layers.embedding({ inputDim: vocabularySize, outputDim: 16, inputLength: this.datasetConfig.maxSequenceLength })
+    )
+    model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }))
+    model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64 }) }))
+    model.add(layers.flatten())
+    model.add(layers.dense({ units: 24, activation: 'relu' }))
+    model.add(layers.dense({ units: 3, activation: 'softmax' }))
+
+    model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] })
+    model.summary()
+  }
+
   private loadDataset() {
     const records: string[][] = []
 
@@ -31,8 +47,8 @@ export class SentimentAnalysisService {
       .on('end', () => {
         const keys = records.shift()
         this.dataset = records.map(record =>
-          record.reduce<ICsvDataset>((accumulator, values, index) => {
-            return { ...accumulator, [keys[index]]: values }
+          record.reduce<ICsvDataset>((accumulator, value, index) => {
+            return { ...accumulator, [keys[index]]: value }
           }, {} as ICsvDataset)
         )
         this.prepareDataset()
@@ -79,7 +95,7 @@ export class SentimentAnalysisService {
     )
     tensor2d(sequences).print()
 
-    //writeFileSync(join(process.cwd(), 'tokens.txt'), JSON.stringify(sequences, null, 2))
+    this.createModel(sequences.length)
   }
 
   private determineSentiment(
@@ -108,7 +124,7 @@ export class SentimentAnalysisService {
     }
   }
 
-  cleanText(text: string) {
+  private cleanText(text: string) {
     const cleanedText = text
       .replaceAll(/[^A-Za-z]+/gi, ' ') // remove any character other than letter
       .replaceAll(/\s+/gi, ' ') //remove extra spaces between words
@@ -131,7 +147,7 @@ export class SentimentAnalysisService {
     return cleanedText
   }
 
-  padSequences(sequences: number[][], maxLength: number) {
+  private padSequences(sequences: number[][], maxLength: number) {
     sequences.forEach(sequence => {
       if (sequence.length < maxLength) {
         while (sequence.length < maxLength) {
