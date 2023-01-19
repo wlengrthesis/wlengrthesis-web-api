@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
-import { oneHot, tensor1d } from '@tensorflow/tfjs-node'
-import { createReadStream } from 'fs'
+import { oneHot, tensor1d, tensor2d } from '@tensorflow/tfjs-node'
+import { createReadStream, writeFileSync } from 'fs'
 import { parse } from 'csv-parse'
 import { Dataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types'
 import { join } from 'path'
@@ -11,6 +11,7 @@ export class SentimentAnalysisService {
   private datasetConfig = {
     url: 'dist/assets/dataset/amazon_products_consumer_reviews_dataset.csv',
     oneHotTensorDepth: 3, // based on number of possible values returned by encodeSentiment func
+    maxSequenceLength: 32,
   } as const
 
   private dataset: Dataset[] = []
@@ -61,20 +62,24 @@ export class SentimentAnalysisService {
           )
       )
     ) as Dataset[]
-    this.dataset = filteredDataset
 
-    const sentiments = this.dataset.map(value => {
+    const sentiments = filteredDataset.map(value => {
       const sentiment = this.determineSentiment(
         value['reviews.rating'],
         value['reviews.doRecommend'],
         value['reviews.numHelpful']
       )
-      const encodedSentiment = this.encodeSentiment(sentiment)
-      return encodedSentiment
+      return this.encodeSentiment(sentiment)
     })
     oneHot(tensor1d(sentiments, 'int32'), this.datasetConfig.oneHotTensorDepth).print()
-    const tokens = tokeniser(filteredDataset.map(dataset => this.cleanText(dataset['reviews.text'])))
-    //writeFileSync(join(process.cwd(), 'tokens.txt'), JSON.stringify(tokens, null, 2))
+
+    const sequences = this.padSequences(
+      tokeniser(filteredDataset.map(dataset => this.cleanText(dataset['reviews.text']))).sequences,
+      this.datasetConfig.maxSequenceLength
+    )
+    tensor2d(sequences).print()
+
+    //writeFileSync(join(process.cwd(), 'tokens.txt'), JSON.stringify(sequences, null, 2))
   }
 
   private determineSentiment(
@@ -124,5 +129,19 @@ export class SentimentAnalysisService {
       .toLowerCase()
 
     return cleanedText
+  }
+
+  padSequences(sequences: number[][], maxLength: number) {
+    sequences.forEach(sequence => {
+      if (sequence.length < maxLength) {
+        while (sequence.length < maxLength) {
+          sequence.push(0)
+        }
+      } else if (sequence.length > maxLength) {
+        sequence.length = maxLength
+      }
+      return sequence
+    })
+    return sequences
   }
 }
