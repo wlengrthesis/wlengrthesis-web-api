@@ -20,9 +20,9 @@ import tokeniser from '../common/helpers/tokeniser'
 export class SentimentAnalysisService {
   private datasetConfig = {
     url: 'dist/assets/dataset/amazon_products_consumer_reviews_dataset.csv',
+    trainedModel: 'dist/assets/trained-model',
     oneHotTensorDepth: 3, // based on number of possible values returned by encodeSentiment func
     maxSequenceLength: 32,
-    trainedModel: 'dist/assets/trained-model',
   } as const
 
   private dataset: Dataset[] = []
@@ -54,7 +54,7 @@ export class SentimentAnalysisService {
   }
 
   private async saveModel() {
-    await this.model.save(join('file://', process.cwd(), this.datasetConfig.trainedModel))
+    await this.model.save(`file://${this.datasetConfig.trainedModel}`)
   }
 
   private loadDataset() {
