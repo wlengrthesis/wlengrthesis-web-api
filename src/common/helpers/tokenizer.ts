@@ -49,7 +49,7 @@ export class Tokenizer {
       _.map(tokens, token => _.toNumber(_.get(this.wordIndex, token, this.wordIndex[this.oovToken])))
     );
 
-    this.vocabularyActualSize = _.size(this.indexWord);
+    this.vocabularyActualSize = _.size(this.wordIndex);
 
     return {
       sequences: this.sequences,
@@ -58,6 +58,7 @@ export class Tokenizer {
   }
 
   textToSequence(text: string) {
+    if (this.vocabularyActualSize <= 1) throw Error('Tokenizer: vocabulary is not defined');
     return _.map(this.splitText(text), token =>
       _.toNumber(_.get(this.wordIndex, token, this.wordIndex[this.oovToken]))
     );

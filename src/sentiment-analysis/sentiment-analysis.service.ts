@@ -10,12 +10,15 @@ import {
   Tensor,
   Rank,
   loadLayersModel,
+  LayersModel,
 } from '@tensorflow/tfjs-node';
 import { createReadStream } from 'fs';
 import { join } from 'path';
 import { parse } from 'csv-parse';
-import { Dataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types';
+import { Dataset, ICsvDataset, ObligatoryKeys, DbDataset } from './sentiment-analysis.types';
 import { Tokenizer } from '../common/helpers/tokenizer';
+import { TextProcessingHelper } from '../common/helpers/text-processing.helper';
+import { PrismaClientService } from '../prisma-client/prisma-client.service';
 
 @Injectable()
 export class SentimentAnalysisService {
@@ -27,69 +30,88 @@ export class SentimentAnalysisService {
   } as const;
 
   private dataset: Dataset[] = [];
-  private model: Sequential;
 
-  constructor(private tokenizer: Tokenizer) {
-    this.loadDataset();
+  private vocabularyActualSize: number;
+  private trainingLabels: Tensor<Rank>;
+  private trainingSamples: Tensor2D;
+
+  private trainingModel: Sequential;
+  private trainedModel: LayersModel;
+
+  constructor(
+    private tokenizer: Tokenizer,
+    private textProcessing: TextProcessingHelper,
+    private prisma: PrismaClientService
+  ) {}
+
+  async runModelTraining(
+    samples: Tensor2D = this.trainingSamples,
+    labels: Tensor<Rank> = this.trainingLabels,
+    modelType = 'RNN'
+  ) {
+    this.prepareModelTraining(modelType);
+    await this.trainingModel.fit(samples, labels, { epochs: 10, validationSplit: 0.2 });
+    await this.trainingModel.save(`file://${this.config.trainedModelUrl}/${modelType}`);
+    this.disposeTensors();
   }
 
-  private createModel(vocabularySize: number) {
-    this.model = sequential();
+  async predict(text: string) {
+    await this.loadModel();
+    const sequence = this.textProcessing.padSequences(
+      [this.tokenizer.textToSequence(this.textProcessing.cleanText(text))],
+      this.config.maxSequenceLength
+    );
+    const predictions = this.trainedModel.predict(tensor2d(sequence)) as Tensor2D;
+    const sentiment = (await predictions.array()).map(prediction =>
+      this.textProcessing.decodeSentiment(prediction.indexOf(Math.max(...prediction)))
+    )[0];
+    predictions.dispose();
+    return sentiment;
+  }
 
-    this.model.add(
+  private async loadModel(printSummary = false) {
+    this.loadDataset();
+    this.trainedModel = await loadLayersModel(`file://${this.config.trainedModelUrl}/model.json`);
+    if (printSummary) this.trainedModel.summary();
+  }
+
+  private prepareModelTraining(modelType: string) {
+    this.loadDataset();
+    switch (modelType) {
+      case 'RNN':
+        this.createRNNModel();
+        break;
+      // TODO: create more models
+      default:
+        break;
+    }
+  }
+
+  private createRNNModel(vocabularySize: number = this.vocabularyActualSize, printSummary = false) {
+    this.trainingModel = sequential();
+
+    this.trainingModel.add(
       layers.embedding({ inputDim: vocabularySize, outputDim: 16, inputLength: this.config.maxSequenceLength })
     );
-    this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
-    this.model.add(
+    this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
+    this.trainingModel.add(
       layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }), mergeMode: 'concat' })
     );
-    this.model.add(layers.globalAveragePooling1d());
-    this.model.add(layers.dense({ units: 24, activation: 'relu' }));
-    this.model.add(layers.dense({ units: 3, activation: 'softmax' }));
+    this.trainingModel.add(layers.globalAveragePooling1d());
+    this.trainingModel.add(layers.dense({ units: 24, activation: 'relu' }));
+    this.trainingModel.add(layers.dense({ units: 3, activation: 'softmax' }));
 
-    this.model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
-    this.model.summary();
-  }
+    this.trainingModel.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
 
-  private async trainModel(sequences: Tensor2D, labels: Tensor<Rank>) {
-    await this.model.fit(sequences, labels, { epochs: 10, validationSplit: 0.2 });
-    this.saveModel();
-  }
-
-  private async loadModel() {
-    const model = await loadLayersModel(`file://${this.config.trainedModelUrl}/model.json`);
-    model.summary();
-
-    const negativeSample =
-      'if ads dont bother you then this may be a decent device purchased this \
-    for my kid and it was loaded down with so much spam it kept loading it up making \
-    it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
-    not very kid friendly oh you can pay to remove the ads but it wont remove them all \
-    buy the samsung better everything';
-
-    const positiveSample =
-      'i gave this as a christmas gift to my inlaws husband and uncle they \
-    loved it and how easy they are to use with fantastic features';
-
-    const seq1 = this.padSequences(
-      [this.tokenizer.textToSequence(this.cleanText(negativeSample))],
-      this.config.maxSequenceLength
-    );
-    const seq2 = this.padSequences(
-      [this.tokenizer.textToSequence(this.cleanText(positiveSample))],
-      this.config.maxSequenceLength
-    );
-
-    console.log(seq1[0], seq2[0]);
-
-    (model.predict(tensor2d([seq1[0], seq2[0]])) as Tensor<Rank>).print();
-  }
-
-  private async saveModel() {
-    await this.model.save(`file://${this.config.trainedModelUrl}`);
+    if (printSummary) this.trainingModel.summary();
   }
 
   private loadDataset() {
+    //prisma
+    this.loadCsvDataset();
+  }
+
+  private loadCsvDataset() {
     const records: string[][] = [];
 
     createReadStream(join(process.cwd(), this.config.datasetUrl))
@@ -104,14 +126,14 @@ export class SentimentAnalysisService {
             return { ...accumulator, [keys[index]]: value };
           }, {} as ICsvDataset)
         );
-        this.prepareDataset();
+        this.prepareCsvDataset();
       })
       .on('error', error => {
         console.warn(error.message);
       });
   }
 
-  private prepareDataset() {
+  private prepareCsvDataset() {
     const filteredDataset = this.dataset.map(record =>
       Object.fromEntries(
         Object.entries(record)
@@ -132,23 +154,26 @@ export class SentimentAnalysisService {
       )
     ) as Dataset[];
 
-    const sentiments = filteredDataset.map(value => {
+    this.fillData(filteredDataset);
+  }
+
+  private fillData(dataset: Dataset[] | DbDataset[]) {
+    const sentiments = dataset.map(value => {
       const sentiment = this.determineSentiment(
         value['reviews.rating'],
         value['reviews.doRecommend'],
         value['reviews.numHelpful']
       );
-      return this.encodeSentiment(sentiment);
+      return this.textProcessing.encodeSentiment(sentiment);
     });
 
-    const labels = oneHot(tensor1d(sentiments, 'int32'), this.config.oneHotTensorDepth);
+    const { sequences, vocabularyActualSize } = this.tokenizer.fitOnTexts(
+      dataset.map(record => this.textProcessing.cleanText(record['reviews.text']))
+    );
 
-    const tokens = this.tokenizer.fitOnTexts(filteredDataset.map(record => this.cleanText(record['reviews.text'])));
-
-    //writeFileSync(join(process.cwd(), 'dist/sequences.txt'), JSON.stringify(sequences, null, 2));
-    //this.createModel(tokens.vocabularyActualSize);
-    //this.trainModel(tensor2d(this.padSequences(tokens.sequences, this.config.maxSequenceLength)), labels);
-    this.loadModel();
+    this.trainingLabels = oneHot(tensor1d(sentiments, 'int32'), this.config.oneHotTensorDepth);
+    this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
+    this.vocabularyActualSize = vocabularyActualSize;
   }
 
   private determineSentiment(
@@ -164,50 +189,8 @@ export class SentimentAnalysisService {
     throw Error('Rating must be a number');
   }
 
-  private encodeSentiment(sentiment: 'positive' | 'neutral' | 'negative') {
-    switch (sentiment) {
-      case 'negative':
-        return 0;
-      case 'neutral':
-        return 1;
-      case 'positive':
-        return 2;
-      default:
-        throw Error('Sentiment must be specified');
-    }
-  }
-
-  private cleanText(text: string) {
-    const cleanedText = text
-      .replaceAll(/[^A-Za-z]+/gi, ' ') // remove any character other than letter
-      .replaceAll(/http\S+/gi, ' ') //remove hyperlinks
-
-      .replaceAll(/(do|did|won|wouldn|shouldn|couldn|can|n)('| )*t/gi, 'not') //expand contracted words
-      .replaceAll(/\'re/gi, ' are')
-      .replaceAll(/\'s/gi, ' is')
-      .replaceAll(/\'d/gi, ' would')
-      .replaceAll(/\'ll/gi, ' will')
-      .replaceAll(/\'ve/gi, ' have')
-      .replaceAll(/\'m/gi, ' am')
-
-      .replaceAll(/\s+/gi, ' ') //remove extra spaces between words
-
-      .trim()
-      .toLowerCase();
-
-    return cleanedText;
-  }
-
-  private padSequences(sequences: number[][], maxLength: number) {
-    sequences.forEach(sequence => {
-      if (sequence.length < maxLength) {
-        while (sequence.length < maxLength) {
-          sequence.push(0);
-        }
-      } else if (sequence.length > maxLength) {
-        sequence.length = maxLength;
-      }
-    });
-    return sequences;
+  private disposeTensors() {
+    this.trainingSamples.dispose();
+    this.trainingLabels.dispose();
   }
 }
