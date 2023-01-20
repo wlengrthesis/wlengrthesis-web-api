@@ -140,7 +140,6 @@ export class SentimentAnalysisService {
       );
       return this.encodeSentiment(sentiment);
     });
-    console.log(sentiments.length);
     const labels = oneHot(tensor1d(sentiments, 'int32'), this.datasetConfig.oneHotTensorDepth);
 
     const sequences = filteredDataset.map(record =>
