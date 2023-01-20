@@ -15,13 +15,13 @@ import { createReadStream } from 'fs';
 import { join } from 'path';
 import { parse } from 'csv-parse';
 import { Dataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types';
-import tokeniser from '../common/helpers/tokeniser';
+import { Tokenizer } from '../common/helpers/tokenizer';
 
 @Injectable()
 export class SentimentAnalysisService {
-  private datasetConfig = {
-    url: 'dist/assets/dataset/amazon_products_consumer_reviews_dataset.csv',
-    trainedModel: 'dist/assets/trained-model',
+  private config = {
+    datasetUrl: 'dist/assets/dataset/amazon_products_consumer_reviews_dataset.csv',
+    trainedModelUrl: 'dist/assets/trained-model',
     oneHotTensorDepth: 3, // based on number of possible values returned by encodeSentiment func
     maxSequenceLength: 32,
   } as const;
@@ -29,20 +29,21 @@ export class SentimentAnalysisService {
   private dataset: Dataset[] = [];
   private model: Sequential;
 
-  constructor() {
+  constructor(private tokenizer: Tokenizer) {
     this.loadDataset();
-    //this.loadModel();
   }
 
   private createModel(vocabularySize: number) {
     this.model = sequential();
 
     this.model.add(
-      layers.embedding({ inputDim: vocabularySize, outputDim: 16, inputLength: this.datasetConfig.maxSequenceLength })
+      layers.embedding({ inputDim: vocabularySize, outputDim: 16, inputLength: this.config.maxSequenceLength })
     );
     this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
-    this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
-    this.model.add(layers.flatten());
+    this.model.add(
+      layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }), mergeMode: 'concat' })
+    );
+    this.model.add(layers.globalAveragePooling1d());
     this.model.add(layers.dense({ units: 24, activation: 'relu' }));
     this.model.add(layers.dense({ units: 3, activation: 'softmax' }));
 
@@ -56,7 +57,7 @@ export class SentimentAnalysisService {
   }
 
   private async loadModel() {
-    const model = await loadLayersModel(`file://${this.datasetConfig.trainedModel}/model.json`);
+    const model = await loadLayersModel(`file://${this.config.trainedModelUrl}/model.json`);
     model.summary();
 
     const negativeSample =
@@ -66,33 +67,32 @@ export class SentimentAnalysisService {
     not very kid friendly oh you can pay to remove the ads but it wont remove them all \
     buy the samsung better everything';
 
-    const seq1 = this.padSequences(
-      tokeniser(this.cleanText(negativeSample)).sequences,
-      this.datasetConfig.maxSequenceLength
-    );
-
-    (model.predict(tensor2d([seq1])) as Tensor<Rank>).print();
-
     const positiveSample =
       'i gave this as a christmas gift to my inlaws husband and uncle they \
     loved it and how easy they are to use with fantastic features';
 
+    const seq1 = this.padSequences(
+      [this.tokenizer.textToSequence(this.cleanText(negativeSample))],
+      this.config.maxSequenceLength
+    );
     const seq2 = this.padSequences(
-      tokeniser(this.cleanText(positiveSample)).sequences,
-      this.datasetConfig.maxSequenceLength
+      [this.tokenizer.textToSequence(this.cleanText(positiveSample))],
+      this.config.maxSequenceLength
     );
 
-    (model.predict(tensor2d([seq2])) as Tensor<Rank>).print();
+    console.log(seq1[0], seq2[0]);
+
+    (model.predict(tensor2d([seq1[0], seq2[0]])) as Tensor<Rank>).print();
   }
 
   private async saveModel() {
-    await this.model.save(`file://${this.datasetConfig.trainedModel}`);
+    await this.model.save(`file://${this.config.trainedModelUrl}`);
   }
 
   private loadDataset() {
     const records: string[][] = [];
 
-    createReadStream(join(process.cwd(), this.datasetConfig.url))
+    createReadStream(join(process.cwd(), this.config.datasetUrl))
       .pipe(parse({ delimiter: ',' }))
       .on('data', (row: string[]) => {
         records.push(row);
@@ -141,17 +141,14 @@ export class SentimentAnalysisService {
       return this.encodeSentiment(sentiment);
     });
 
-    const labels = oneHot(tensor1d(sentiments, 'int32'), this.datasetConfig.oneHotTensorDepth);
+    const labels = oneHot(tensor1d(sentiments, 'int32'), this.config.oneHotTensorDepth);
 
-    const sequences = filteredDataset.map(record =>
-      this.padSequences(
-        tokeniser(this.cleanText(record['reviews.text'])).sequences,
-        this.datasetConfig.maxSequenceLength
-      )
-    );
+    const tokens = this.tokenizer.fitOnTexts(filteredDataset.map(record => this.cleanText(record['reviews.text'])));
 
-    this.createModel(sequences.length);
-    this.trainModel(tensor2d(sequences), labels);
+    //writeFileSync(join(process.cwd(), 'dist/sequences.txt'), JSON.stringify(sequences, null, 2));
+    //this.createModel(tokens.vocabularyActualSize);
+    //this.trainModel(tensor2d(this.padSequences(tokens.sequences, this.config.maxSequenceLength)), labels);
+    this.loadModel();
   }
 
   private determineSentiment(
@@ -183,19 +180,17 @@ export class SentimentAnalysisService {
   private cleanText(text: string) {
     const cleanedText = text
       .replaceAll(/[^A-Za-z]+/gi, ' ') // remove any character other than letter
-      .replaceAll(/\s+/gi, ' ') //remove extra spaces between words
       .replaceAll(/http\S+/gi, ' ') //remove hyperlinks
 
-      .replaceAll(/won\'t/gi, 'will not') //expand contracted words
-      .replaceAll(/can\'t/gi, 'can not')
-      .replaceAll(/n\'t/gi, 'not')
-      .replaceAll(/\'t/gi, 'not')
-      .replaceAll(/\'re/gi, 'are')
-      .replaceAll(/\'s/gi, 'is')
-      .replaceAll(/\'d/gi, 'would')
-      .replaceAll(/\'ll/gi, 'will')
-      .replaceAll(/\'ve/gi, 'have')
-      .replaceAll(/\'m/gi, 'am')
+      .replaceAll(/(do|did|won|wouldn|shouldn|couldn|can|n)('| )*t/gi, 'not') //expand contracted words
+      .replaceAll(/\'re/gi, ' are')
+      .replaceAll(/\'s/gi, ' is')
+      .replaceAll(/\'d/gi, ' would')
+      .replaceAll(/\'ll/gi, ' will')
+      .replaceAll(/\'ve/gi, ' have')
+      .replaceAll(/\'m/gi, ' am')
+
+      .replaceAll(/\s+/gi, ' ') //remove extra spaces between words
 
       .trim()
       .toLowerCase();
@@ -203,14 +198,16 @@ export class SentimentAnalysisService {
     return cleanedText;
   }
 
-  private padSequences(sequences: number[], maxLength: number) {
-    if (sequences.length < maxLength) {
-      while (sequences.length < maxLength) {
-        sequences.push(0);
+  private padSequences(sequences: number[][], maxLength: number) {
+    sequences.forEach(sequence => {
+      if (sequence.length < maxLength) {
+        while (sequence.length < maxLength) {
+          sequence.push(0);
+        }
+      } else if (sequence.length > maxLength) {
+        sequence.length = maxLength;
       }
-    } else if (sequences.length > maxLength) {
-      sequences.length = maxLength;
-    }
+    });
     return sequences;
   }
 }
