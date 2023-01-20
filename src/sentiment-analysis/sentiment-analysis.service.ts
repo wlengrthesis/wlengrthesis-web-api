@@ -10,12 +10,11 @@ import {
   Tensor,
   Rank,
   loadLayersModel,
-  io,
 } from '@tensorflow/tfjs-node';
 import { createReadStream } from 'fs';
+import { join } from 'path';
 import { parse } from 'csv-parse';
 import { Dataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types';
-import { join } from 'path';
 import tokeniser from '../common/helpers/tokeniser';
 
 @Injectable()
@@ -43,7 +42,7 @@ export class SentimentAnalysisService {
     );
     this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
     this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
-    this.model.add(layers.globalAveragePooling1d());
+    this.model.add(layers.flatten());
     this.model.add(layers.dense({ units: 24, activation: 'relu' }));
     this.model.add(layers.dense({ units: 3, activation: 'softmax' }));
 
@@ -60,29 +59,30 @@ export class SentimentAnalysisService {
     const model = await loadLayersModel(`file://${this.datasetConfig.trainedModel}/model.json`);
     model.summary();
 
-    const positiveSample =
-      'i gave this as a christmas gift to my inlaws husband and uncle they \
-    loved it and how easy they are to use with fantastic features';
-
-    const sequences = this.padSequences(
-      tokeniser(this.cleanText(positiveSample)).sequences,
-      this.datasetConfig.maxSequenceLength
-    );
-
-    (model.predict(tensor2d([sequences])) as Tensor<Rank>).print();
-
     const negativeSample =
-      'it was loaded down with so much spam it kept loading it up making \
+      'if ads dont bother you then this may be a decent device purchased this \
+    for my kid and it was loaded down with so much spam it kept loading it up making \
     it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
     not very kid friendly oh you can pay to remove the ads but it wont remove them all \
     buy the samsung better everything';
 
-    const sequences2 = this.padSequences(
+    const seq1 = this.padSequences(
       tokeniser(this.cleanText(negativeSample)).sequences,
       this.datasetConfig.maxSequenceLength
     );
 
-    (model.predict(tensor2d([sequences2])) as Tensor<Rank>).print();
+    (model.predict(tensor2d([seq1])) as Tensor<Rank>).print();
+
+    const positiveSample =
+      'i gave this as a christmas gift to my inlaws husband and uncle they \
+    loved it and how easy they are to use with fantastic features';
+
+    const seq2 = this.padSequences(
+      tokeniser(this.cleanText(positiveSample)).sequences,
+      this.datasetConfig.maxSequenceLength
+    );
+
+    (model.predict(tensor2d([seq2])) as Tensor<Rank>).print();
   }
 
   private async saveModel() {
@@ -140,6 +140,7 @@ export class SentimentAnalysisService {
       );
       return this.encodeSentiment(sentiment);
     });
+
     const labels = oneHot(tensor1d(sentiments, 'int32'), this.datasetConfig.oneHotTensorDepth);
 
     const sequences = filteredDataset.map(record =>
@@ -150,7 +151,7 @@ export class SentimentAnalysisService {
     );
 
     this.createModel(sequences.length);
-    // this.trainModel(tensor2d(sequences), labels);
+    this.trainModel(tensor2d(sequences), labels);
   }
 
   private determineSentiment(
