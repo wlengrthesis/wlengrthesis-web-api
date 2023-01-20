@@ -7,6 +7,6 @@ module.exports = {
   arrowParens: 'avoid',
   endOfLine: 'auto',
   bracketSpacing: true,
-  semi: false,
+  semi: true,
   singleQuote: true,
 }

@@ -1,9 +1,11 @@
-import _ from 'lodash'
+import _ from 'lodash';
 
-const FILTER_REGEX = /[\\.,/#!$£%"@+-^&*;:{}=\-_.`~()]/g
-const SEPARATOR = ' '
+const FILTER_REGEX = /[\\.,/#!$£%"@+-^&*;:{}=\-_.`~()]/g;
+const SEPARATOR = ' ';
 
-const splitText = _.memoize(text => _.compact(_.split(_.toLower(_.trim(_.replace(text, FILTER_REGEX, ''))), SEPARATOR)))
+const splitText = _.memoize(text =>
+  _.compact(_.split(_.toLower(_.trim(_.replace(text, FILTER_REGEX, ''))), SEPARATOR))
+);
 
 const getIndexWord = _.memoize(texts =>
   _.fromPairs(
@@ -12,21 +14,21 @@ const getIndexWord = _.memoize(texts =>
       ([word], index) => [index + 1, word]
     )
   )
-)
+);
 
-const getWordIndex = _.memoize(texts => _.invert(getIndexWord(texts)))
+const getWordIndex = _.memoize(texts => _.invert(getIndexWord(texts)));
 
-const getWordCounts = _.memoize(texts => _.countBy(_.compact(_.flatMap(texts, text => splitText(text)))))
+const getWordCounts = _.memoize(texts => _.countBy(_.compact(_.flatMap(texts, text => splitText(text)))));
 
 const getSequences = _.memoize(texts =>
-  _.map(texts, text => _.map(splitText(text), word => _.toNumber(_.get(getWordIndex(texts), word))))
-)
+  _.flatten(_.map(texts, text => _.map(splitText(text), word => _.toNumber(_.get(getWordIndex(texts), word)))))
+);
 
-const getWordTokens = _.memoize(texts => _.map(texts, text => splitText(text)))
+const getWordTokens = _.memoize(texts => _.map(texts, text => splitText(text)));
 
 const getWordTokenIndex = _.memoize(texts =>
   _.map(getWordTokens(texts), wordTokens => _.map(wordTokens, word => _.toNumber(_.get(getWordIndex(texts), word))))
-)
+);
 
 const tokeniser = _.memoize(texts => ({
   indexWord: getIndexWord(texts),
@@ -35,6 +37,6 @@ const tokeniser = _.memoize(texts => ({
   sequences: getSequences(texts),
   wordTokens: getWordTokens(texts),
   wordTokenIndex: getWordTokenIndex(texts),
-}))
+}));
 
-export default tokeniser
+export default tokeniser;

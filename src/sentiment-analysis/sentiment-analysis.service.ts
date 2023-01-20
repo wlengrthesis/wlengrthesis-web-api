@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable } from '@nestjs/common';
 import {
   oneHot,
   sequential,
@@ -9,12 +9,14 @@ import {
   Tensor2D,
   Tensor,
   Rank,
-} from '@tensorflow/tfjs-node'
-import { createReadStream } from 'fs'
-import { parse } from 'csv-parse'
-import { Dataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types'
-import { join } from 'path'
-import tokeniser from '../common/helpers/tokeniser'
+  loadLayersModel,
+  io,
+} from '@tensorflow/tfjs-node';
+import { createReadStream } from 'fs';
+import { parse } from 'csv-parse';
+import { Dataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types';
+import { join } from 'path';
+import tokeniser from '../common/helpers/tokeniser';
 
 @Injectable()
 export class SentimentAnalysisService {
@@ -23,60 +25,90 @@ export class SentimentAnalysisService {
     trainedModel: 'dist/assets/trained-model',
     oneHotTensorDepth: 3, // based on number of possible values returned by encodeSentiment func
     maxSequenceLength: 32,
-  } as const
+  } as const;
 
-  private dataset: Dataset[] = []
-  private model: Sequential
+  private dataset: Dataset[] = [];
+  private model: Sequential;
 
   constructor() {
-    this.loadDataset()
+    this.loadDataset();
+    //this.loadModel();
   }
 
   private createModel(vocabularySize: number) {
-    this.model = sequential()
+    this.model = sequential();
 
     this.model.add(
       layers.embedding({ inputDim: vocabularySize, outputDim: 16, inputLength: this.datasetConfig.maxSequenceLength })
-    )
-    this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }))
-    this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }))
-    this.model.add(layers.globalAveragePooling1d())
-    this.model.add(layers.dense({ units: 24, activation: 'relu' }))
-    this.model.add(layers.dense({ units: 3, activation: 'softmax' }))
+    );
+    this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
+    this.model.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
+    this.model.add(layers.globalAveragePooling1d());
+    this.model.add(layers.dense({ units: 24, activation: 'relu' }));
+    this.model.add(layers.dense({ units: 3, activation: 'softmax' }));
 
-    this.model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] })
-    this.model.summary()
+    this.model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+    this.model.summary();
   }
 
   private async trainModel(sequences: Tensor2D, labels: Tensor<Rank>) {
-    await this.model.fit(sequences, labels, { epochs: 10, validationSplit: 0.2 })
-    this.saveModel()
+    await this.model.fit(sequences, labels, { epochs: 10, validationSplit: 0.2 });
+    this.saveModel();
+  }
+
+  private async loadModel() {
+    const model = await loadLayersModel(`file://${this.datasetConfig.trainedModel}/model.json`);
+    model.summary();
+
+    const positiveSample =
+      'i gave this as a christmas gift to my inlaws husband and uncle they \
+    loved it and how easy they are to use with fantastic features';
+
+    const sequences = this.padSequences(
+      tokeniser(this.cleanText(positiveSample)).sequences,
+      this.datasetConfig.maxSequenceLength
+    );
+
+    (model.predict(tensor2d([sequences])) as Tensor<Rank>).print();
+
+    const negativeSample =
+      'it was loaded down with so much spam it kept loading it up making \
+    it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
+    not very kid friendly oh you can pay to remove the ads but it wont remove them all \
+    buy the samsung better everything';
+
+    const sequences2 = this.padSequences(
+      tokeniser(this.cleanText(negativeSample)).sequences,
+      this.datasetConfig.maxSequenceLength
+    );
+
+    (model.predict(tensor2d([sequences2])) as Tensor<Rank>).print();
   }
 
   private async saveModel() {
-    await this.model.save(`file://${this.datasetConfig.trainedModel}`)
+    await this.model.save(`file://${this.datasetConfig.trainedModel}`);
   }
 
   private loadDataset() {
-    const records: string[][] = []
+    const records: string[][] = [];
 
     createReadStream(join(process.cwd(), this.datasetConfig.url))
       .pipe(parse({ delimiter: ',' }))
       .on('data', (row: string[]) => {
-        records.push(row)
+        records.push(row);
       })
       .on('end', () => {
-        const keys = records.shift()
+        const keys = records.shift();
         this.dataset = records.map(record =>
           record.reduce<ICsvDataset>((accumulator, value, index) => {
-            return { ...accumulator, [keys[index]]: value }
+            return { ...accumulator, [keys[index]]: value };
           }, {} as ICsvDataset)
-        )
-        this.prepareDataset()
+        );
+        this.prepareDataset();
       })
       .on('error', error => {
-        console.warn(error.message)
-      })
+        console.warn(error.message);
+      });
   }
 
   private prepareDataset() {
@@ -98,25 +130,28 @@ export class SentimentAnalysisService {
               (key as keyof ObligatoryKeys) !== 'reviews.text'
           )
       )
-    ) as Dataset[]
+    ) as Dataset[];
 
     const sentiments = filteredDataset.map(value => {
       const sentiment = this.determineSentiment(
         value['reviews.rating'],
         value['reviews.doRecommend'],
         value['reviews.numHelpful']
+      );
+      return this.encodeSentiment(sentiment);
+    });
+    console.log(sentiments.length);
+    const labels = oneHot(tensor1d(sentiments, 'int32'), this.datasetConfig.oneHotTensorDepth);
+
+    const sequences = filteredDataset.map(record =>
+      this.padSequences(
+        tokeniser(this.cleanText(record['reviews.text'])).sequences,
+        this.datasetConfig.maxSequenceLength
       )
-      return this.encodeSentiment(sentiment)
-    })
-    const labels = oneHot(tensor1d(sentiments, 'int32'), this.datasetConfig.oneHotTensorDepth)
+    );
 
-    const sequences = this.padSequences(
-      tokeniser(filteredDataset.map(dataset => this.cleanText(dataset['reviews.text']))).sequences,
-      this.datasetConfig.maxSequenceLength
-    )
-
-    this.createModel(sequences.length)
-    this.trainModel(tensor2d(sequences), labels)
+    this.createModel(sequences.length);
+    // this.trainModel(tensor2d(sequences), labels);
   }
 
   private determineSentiment(
@@ -124,24 +159,24 @@ export class SentimentAnalysisService {
     doRecommend: Dataset['reviews.doRecommend'],
     numHelpful: Dataset['reviews.numHelpful']
   ) {
-    if (Number(rating) >= 4) return 'positive'
-    if (rating === '3' && doRecommend === 'TRUE' && Number(numHelpful) > 1) return 'neutral'
-    if (rating === '3' && doRecommend === '' && Number(numHelpful) > 1) return 'negative'
-    if (rating === '3') return 'neutral'
-    if (Number(rating) <= 2) return 'negative'
-    throw Error('Rating must be a number')
+    if (Number(rating) >= 4) return 'positive';
+    if (rating === '3' && doRecommend === 'TRUE' && Number(numHelpful) > 1) return 'neutral';
+    if (rating === '3' && doRecommend === '' && Number(numHelpful) > 1) return 'negative';
+    if (rating === '3') return 'neutral';
+    if (Number(rating) <= 2) return 'negative';
+    throw Error('Rating must be a number');
   }
 
   private encodeSentiment(sentiment: 'positive' | 'neutral' | 'negative') {
     switch (sentiment) {
       case 'negative':
-        return 0
+        return 0;
       case 'neutral':
-        return 1
+        return 1;
       case 'positive':
-        return 2
+        return 2;
       default:
-        throw Error('Sentiment must be specified')
+        throw Error('Sentiment must be specified');
     }
   }
 
@@ -163,22 +198,19 @@ export class SentimentAnalysisService {
       .replaceAll(/\'m/gi, 'am')
 
       .trim()
-      .toLowerCase()
+      .toLowerCase();
 
-    return cleanedText
+    return cleanedText;
   }
 
-  private padSequences(sequences: number[][], maxLength: number) {
-    sequences.forEach(sequence => {
-      if (sequence.length < maxLength) {
-        while (sequence.length < maxLength) {
-          sequence.push(0)
-        }
-      } else if (sequence.length > maxLength) {
-        sequence.length = maxLength
+  private padSequences(sequences: number[], maxLength: number) {
+    if (sequences.length < maxLength) {
+      while (sequences.length < maxLength) {
+        sequences.push(0);
       }
-      return sequence
-    })
-    return sequences
+    } else if (sequences.length > maxLength) {
+      sequences.length = maxLength;
+    }
+    return sequences;
   }
 }
