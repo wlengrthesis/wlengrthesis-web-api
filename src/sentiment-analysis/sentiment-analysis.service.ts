@@ -12,12 +12,11 @@ import {
   loadLayersModel,
   LayersModel,
 } from '@tensorflow/tfjs-node';
-import { Dataset, Prisma } from '@prisma/client';
 import { createReadStream } from 'fs';
 import { join } from 'path';
 import { parse } from 'csv-parse';
-import { ProcessingDataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types';
-import { Tokenizer } from '../common/helpers/tokenizer';
+import { ProcessingDataset, ICsvDataset, RequiredKeys } from './sentiment-analysis.types';
+import { Tokenizer, Vocabulary } from '../common/helpers/tokenizer';
 import { TextProcessingHelper } from '../common/helpers/text-processing.helper';
 import { PrismaClientService } from '../prisma-client/prisma-client.service';
 
@@ -31,6 +30,7 @@ export class SentimentAnalysisService {
   } as const;
 
   private processingDataset: ProcessingDataset[] = [];
+  private processingModelId: string;
 
   private vocabularyActualSize: number;
   private trainingLabels: Tensor<Rank>;
@@ -75,7 +75,8 @@ export class SentimentAnalysisService {
   }
 
   async runModelTraining(samples?: Tensor2D, labels?: Tensor<Rank>, modelType = 'RNN') {
-    await this.prepareModelTraining(modelType);
+    this.processingModelId = modelType;
+    await this.prepareModelTraining();
     await this.trainingModel.fit(samples ? samples : this.trainingSamples, labels ? labels : this.trainingLabels, {
       epochs: 10,
       validationSplit: 0.2,
@@ -84,9 +85,9 @@ export class SentimentAnalysisService {
     this.disposeTensors();
   }
 
-  private async prepareModelTraining(modelType: string) {
+  private async prepareModelTraining() {
     await this.loadDataset();
-    switch (modelType) {
+    switch (this.processingModelId) {
       case 'RNN':
         this.createRNNModel();
         break;
@@ -97,9 +98,12 @@ export class SentimentAnalysisService {
   }
 
   private async loadDataset() {
-    const dbDataset = await this.prisma.dataset.findMany();
-    if (dbDataset.length > 1) {
-      this.fillData(dbDataset);
+    const { vocabulary, vocabularyActualSize } = await this.prisma.dataset.findUnique({
+      where: { modelId: this.processingModelId },
+    });
+    if (vocabulary && vocabularyActualSize) {
+      const parsedVocabulary = JSON.parse(vocabulary) as Vocabulary;
+      this.tokenizer.synchronizeVocabulary(parsedVocabulary, vocabularyActualSize);
       return;
     }
     try {
@@ -149,59 +153,66 @@ export class SentimentAnalysisService {
     });
   }
 
-  private async prepareCsvDataset() {
-    const data = (
-      this.processingDataset.map(record =>
+  private prepareCsvDataset() {
+    const dataset = this.processingDataset
+      .map(record =>
         Object.fromEntries(
           Object.entries(record)
             .filter(([key]) =>
               (
-                [
-                  'reviews.text',
-                  'reviews.rating',
-                  'reviews.doRecommend',
-                  'reviews.title',
-                  'reviews.numHelpful',
-                ] as Array<keyof Partial<ICsvDataset>>
-              ).includes(key as keyof Partial<ICsvDataset>)
+                ['reviews.text', 'reviews.rating', 'reviews.doRecommend', 'reviews.numHelpful'] as Array<
+                  keyof RequiredKeys
+                >
+              ).includes(key as keyof RequiredKeys)
             )
             .filter(
               ([key, value]) =>
-                ((key as keyof ObligatoryKeys) === 'reviews.rating' && value !== '') ||
-                ((key as keyof ObligatoryKeys) === 'reviews.text' && value !== '') ||
-                (key as keyof ObligatoryKeys) !== 'reviews.rating' ||
-                (key as keyof ObligatoryKeys) !== 'reviews.text'
+                ((key as keyof RequiredKeys) === 'reviews.rating' && value !== '') ||
+                ((key as keyof RequiredKeys) === 'reviews.text' && value !== '') ||
+                (key as keyof RequiredKeys) !== 'reviews.rating' ||
+                (key as keyof RequiredKeys) !== 'reviews.text'
             )
         )
-      ) as ProcessingDataset[]
-    ).map<Partial<Dataset>>(record => ({
-      text: this.textProcessing.cleanText(record['reviews.text']),
-      rating: record['reviews.rating'],
-      doRecommend: record['reviews.doRecommend'],
-      numHeplful: record['reviews.numHelpful'],
-    })) as Prisma.DatasetCreateManyInput[];
+      )
+      .map(record => ({
+        ...record,
+        'reviews.text': this.textProcessing.cleanText(record['reviews.text']),
+      })) as ProcessingDataset[];
 
-    this.fillData(data as Dataset[]);
-    await this.prisma.dataset.createMany({ data });
-  }
-
-  private fillData(dataset: Dataset[]) {
     const sentiments = dataset.map(value => {
-      const sentiment = this.determineSentiment(value.rating, value.doRecommend, value.numHeplful);
+      const sentiment = this.determineSentiment(
+        value['reviews.rating'],
+        value['reviews.doRecommend'],
+        value['reviews.numHelpful']
+      );
       return this.textProcessing.encodeSentiment(sentiment);
     });
 
-    const { sequences, vocabularyActualSize } = this.tokenizer.fitOnTexts(dataset.map(record => record.text));
+    const { sequences, vocabularyActualSize } = this.tokenizer.fitOnTexts(
+      dataset.map(record => record['reviews.text'])
+    );
 
     this.trainingLabels = oneHot(tensor1d(sentiments, 'int32'), this.config.oneHotTensorDepth);
     this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
     this.vocabularyActualSize = vocabularyActualSize;
+
+    this.saveVocabulary();
+  }
+
+  private async saveVocabulary() {
+    await this.prisma.dataset.create({
+      data: {
+        modelId: this.processingModelId,
+        vocabulary: JSON.stringify(this.tokenizer.vocabulary),
+        vocabularyActualSize: this.tokenizer.vocabularyActualSize,
+      },
+    });
   }
 
   private determineSentiment(
-    rating: Dataset['rating'],
-    doRecommend: Dataset['doRecommend'],
-    numHelpful: Dataset['numHeplful']
+    rating: ProcessingDataset['reviews.rating'],
+    doRecommend: ProcessingDataset['reviews.doRecommend'],
+    numHelpful: ProcessingDataset['reviews.numHelpful']
   ) {
     if (Number(rating) >= 4) return 'positive';
     if (rating === '3' && !!doRecommend && Number(numHelpful) > 1) return 'neutral';

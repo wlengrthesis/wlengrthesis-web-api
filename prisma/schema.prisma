@@ -30,13 +30,11 @@ model User {
 model Dataset {
   id Int @id @default(autoincrement())
 
-  text        String
-  rating      String
-  doRecommend String
-  numHeplful  String
+  modelId              String @unique
+  vocabulary           String
+  vocabularyActualSize Int
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   @@map("dataset")
 }

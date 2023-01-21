@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import _, { Dictionary } from 'lodash';
 
+export type Vocabulary = Dictionary<string>;
+
 @Injectable()
 export class Tokenizer {
   private readonly FILTER_REGEX = /[\\.,/#!$£%"@+-^&*;:{}=\-_.`~()]/g;
@@ -9,7 +11,7 @@ export class Tokenizer {
   words: string[][] = [];
   wordCounts: Record<string, number>;
   indexedWords: Dictionary<string>;
-  vocabulary: Dictionary<string>;
+  vocabulary: Vocabulary;
   sequences: number[][] = [];
   vocabularyActualSize: number;
 
@@ -62,5 +64,10 @@ export class Tokenizer {
     return _.map(this.splitText(text), token =>
       _.toNumber(_.get(this.vocabulary, token, this.vocabulary[this.oovToken]))
     );
+  }
+
+  synchronizeVocabulary(vocabulary: Vocabulary, vocabularyActualSize: number) {
+    this.vocabulary = vocabulary;
+    this.vocabularyActualSize = vocabularyActualSize;
   }
 }

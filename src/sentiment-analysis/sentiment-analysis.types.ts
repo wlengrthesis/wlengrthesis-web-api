@@ -22,7 +22,10 @@ export interface ICsvDataset {
   'reviews.username': string;
 }
 
-export type ObligatoryKeys = Pick<ICsvDataset, 'reviews.text' | 'reviews.rating'>;
-export type OptionalKeys = Partial<Pick<ICsvDataset, keyof Omit<ICsvDataset, keyof ObligatoryKeys>>>;
+export type RequiredKeys = Pick<
+  ICsvDataset,
+  'reviews.text' | 'reviews.rating' | 'reviews.doRecommend' | 'reviews.numHelpful'
+>;
+export type OptionalKeys = Partial<Pick<ICsvDataset, keyof Omit<ICsvDataset, keyof RequiredKeys>>>;
 
-export type ProcessingDataset = ObligatoryKeys & OptionalKeys;
+export type ProcessingDataset = RequiredKeys & OptionalKeys;
