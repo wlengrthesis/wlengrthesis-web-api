@@ -30,7 +30,7 @@ export class SentimentAnalysisService {
   } as const;
 
   private processingDataset: ProcessingDataset[] = [];
-  private processingModelId: string;
+  private processingModelId = 'RNN';
 
   private vocabularyActualSize: number;
   private trainingLabels: Tensor<Rank>;
@@ -55,7 +55,7 @@ export class SentimentAnalysisService {
   }
 
   async predictSentiment(text: string) {
-    await this.loadModel(true);
+    await this.loadModel();
     const sequence = this.textProcessing.padSequences(
       [this.tokenizer.textToSequence(this.textProcessing.cleanText(text))],
       this.config.maxSequenceLength
@@ -68,10 +68,10 @@ export class SentimentAnalysisService {
     return sentiment;
   }
 
-  private async loadModel(printSummary = false) {
+  private async loadModel() {
     await this.loadDataset();
     this.trainedModel = await loadLayersModel(`file://${this.config.trainedModelUrl}/model.json`);
-    if (printSummary) this.trainedModel.summary();
+    if (process.env.NODE_ENV === 'development') this.trainedModel.summary();
   }
 
   async runModelTraining(samples?: Tensor2D, labels?: Tensor<Rank>, modelType = 'RNN') {
@@ -98,22 +98,28 @@ export class SentimentAnalysisService {
   }
 
   private async loadDataset() {
-    const { vocabulary, vocabularyActualSize } = await this.prisma.dataset.findUnique({
+    const dataset = await this.prisma.dataset.findUnique({
       where: { modelId: this.processingModelId },
     });
-    if (vocabulary && vocabularyActualSize) {
-      const parsedVocabulary = JSON.parse(vocabulary) as Vocabulary;
-      this.tokenizer.synchronizeVocabulary(parsedVocabulary, vocabularyActualSize);
+    if (dataset && dataset.vocabulary && dataset.vocabularyActualSize) {
+      const parsedVocabulary = JSON.parse(dataset.vocabulary) as Vocabulary;
+      this.tokenizer.synchronizeVocabulary(parsedVocabulary, dataset.vocabularyActualSize);
       return;
     }
     try {
       await this.loadCsvDataset();
     } catch (error) {
-      console.warn(error);
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(error);
+        return;
+      }
+      throw Error('Error in processing csv: ', error);
     }
   }
 
-  private createRNNModel(vocabularySize: number = this.vocabularyActualSize, printSummary = false) {
+  private createRNNModel(vocabularySize: number = this.vocabularyActualSize) {
+    if (!vocabularySize) throw Error('Training model creation: size of vocabulary must be greater than zero');
+
     this.trainingModel = sequential();
 
     this.trainingModel.add(
@@ -127,7 +133,7 @@ export class SentimentAnalysisService {
 
     this.trainingModel.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
 
-    if (printSummary) this.trainingModel.summary();
+    if (process.env.NODE_ENV === 'development') this.trainingModel.summary();
   }
 
   private async loadCsvDataset() {
