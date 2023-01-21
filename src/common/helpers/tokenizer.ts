@@ -53,10 +53,7 @@ export class Tokenizer {
 
     this.vocabularyActualSize = _.size(this.vocabulary);
 
-    return {
-      sequences: this.sequences,
-      vocabularyActualSize: this.vocabularyActualSize,
-    };
+    return this.sequences;
   }
 
   textToSequence(text: string) {

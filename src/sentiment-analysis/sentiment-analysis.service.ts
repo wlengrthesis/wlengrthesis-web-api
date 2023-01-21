@@ -12,13 +12,14 @@ import {
   loadLayersModel,
   LayersModel,
 } from '@tensorflow/tfjs-node';
-import { createReadStream } from 'fs';
+import { createReadStream, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { parse } from 'csv-parse';
 import { ProcessingDataset, ICsvDataset, RequiredKeys } from './sentiment-analysis.types';
 import { Tokenizer, Vocabulary } from '../common/helpers/tokenizer';
 import { TextProcessingHelper } from '../common/helpers/text-processing.helper';
 import { PrismaClientService } from '../prisma-client/prisma-client.service';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime';
 
 @Injectable()
 export class SentimentAnalysisService {
@@ -32,7 +33,6 @@ export class SentimentAnalysisService {
   private processingDataset: ProcessingDataset[] = [];
   private processingModelId = 'RNN';
 
-  private vocabularyActualSize: number;
   private trainingLabels: Tensor<Rank>;
   private trainingSamples: Tensor2D;
 
@@ -44,14 +44,14 @@ export class SentimentAnalysisService {
     private textProcessing: TextProcessingHelper,
     private prisma: PrismaClientService
   ) {
-    // this.predictSentiment(
-    //   'if ads dont bother you then this may be a decent device purchased this \
-    // for my kid and it was loaded down with so much spam it kept loading it up making \
-    // it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
-    // not very kid friendly oh you can pay to remove the ads but it wont remove them all \
-    // buy the samsung better everything'
-    // ).then(data => console.log(data));
-    this.runModelTraining();
+    this.predictSentiment(
+      'if ads dont bother you then this may be a decent device purchased this \
+    for my kid and it was loaded down with so much spam it kept loading it up making \
+    it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
+    not very kid friendly oh you can pay to remove the ads but it wont remove them all \
+    buy the samsung better everything'
+    ).then(data => console.log(data));
+    //this.runModelTraining();
   }
 
   async predictSentiment(text: string) {
@@ -70,7 +70,9 @@ export class SentimentAnalysisService {
 
   private async loadModel() {
     await this.loadDataset();
-    this.trainedModel = await loadLayersModel(`file://${this.config.trainedModelUrl}/model.json`);
+    this.trainedModel = await loadLayersModel(
+      `file://${this.config.trainedModelUrl}/${this.processingModelId}/model.json`
+    );
     if (process.env.NODE_ENV === 'development') this.trainedModel.summary();
   }
 
@@ -81,12 +83,14 @@ export class SentimentAnalysisService {
       epochs: 10,
       validationSplit: 0.2,
     });
-    await this.trainingModel.save(`file://${this.config.trainedModelUrl}/${modelType}`);
+    const modelDirectory = join(process.cwd(), `${this.config.trainedModelUrl}/${modelType}`);
+    if (!existsSync(modelDirectory)) mkdirSync(modelDirectory, { recursive: true });
+    await this.trainingModel.save(`file://${modelDirectory}`);
     this.disposeTensors();
   }
 
   private async prepareModelTraining() {
-    await this.loadDataset();
+    await this.loadCsvDataset();
     switch (this.processingModelId) {
       case 'RNN':
         this.createRNNModel();
@@ -117,13 +121,19 @@ export class SentimentAnalysisService {
     }
   }
 
-  private createRNNModel(vocabularySize: number = this.vocabularyActualSize) {
-    if (!vocabularySize) throw Error('Training model creation: size of vocabulary must be greater than zero');
+  private createRNNModel(vocabularySize?: number) {
+    if (!vocabularySize && !this.tokenizer.vocabularyActualSize) {
+      throw Error('Training model creation: size of vocabulary must be greater than zero');
+    }
 
     this.trainingModel = sequential();
 
     this.trainingModel.add(
-      layers.embedding({ inputDim: vocabularySize, outputDim: 16, inputLength: this.config.maxSequenceLength })
+      layers.embedding({
+        inputDim: vocabularySize ? vocabularySize : this.tokenizer.vocabularyActualSize,
+        outputDim: 16,
+        inputLength: this.config.maxSequenceLength,
+      })
     );
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
@@ -194,25 +204,30 @@ export class SentimentAnalysisService {
       return this.textProcessing.encodeSentiment(sentiment);
     });
 
-    const { sequences, vocabularyActualSize } = this.tokenizer.fitOnTexts(
-      dataset.map(record => record['reviews.text'])
-    );
+    const sequences = this.tokenizer.fitOnTexts(dataset.map(record => record['reviews.text']));
 
     this.trainingLabels = oneHot(tensor1d(sentiments, 'int32'), this.config.oneHotTensorDepth);
     this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
-    this.vocabularyActualSize = vocabularyActualSize;
 
     this.saveVocabulary();
   }
 
   private async saveVocabulary() {
-    await this.prisma.dataset.create({
-      data: {
-        modelId: this.processingModelId,
-        vocabulary: JSON.stringify(this.tokenizer.vocabulary),
-        vocabularyActualSize: this.tokenizer.vocabularyActualSize,
-      },
-    });
+    await this.prisma.dataset
+      .create({
+        data: {
+          modelId: this.processingModelId,
+          vocabulary: JSON.stringify(this.tokenizer.vocabulary),
+          vocabularyActualSize: this.tokenizer.vocabularyActualSize,
+        },
+      })
+      .catch(error => {
+        if (error instanceof PrismaClientKnownRequestError) {
+          // Error code P2002: Unique constraint failed - https://www.prisma.io/docs/reference/api-reference/error-reference#p2002
+          if (error.code === 'P2002') return;
+        }
+        throw error;
+      });
   }
 
   private determineSentiment(
