@@ -205,8 +205,8 @@ export class SentimentAnalysisService {
     numHelpful: Dataset['numHeplful']
   ) {
     if (Number(rating) >= 4) return 'positive';
-    if (rating === '3' && doRecommend === 'TRUE' && Number(numHelpful) > 1) return 'neutral';
-    if (rating === '3' && doRecommend === '' && Number(numHelpful) > 1) return 'negative';
+    if (rating === '3' && !!doRecommend === true && Number(numHelpful) > 1) return 'neutral';
+    if (rating === '3' && !doRecommend && Number(numHelpful) > 1) return 'negative';
     if (rating === '3') return 'neutral';
     if (Number(rating) <= 2) return 'negative';
     throw Error('Rating must be a number');
