@@ -25,9 +25,4 @@ export interface ICsvDataset {
 export type ObligatoryKeys = Pick<ICsvDataset, 'reviews.text' | 'reviews.rating'>;
 export type OptionalKeys = Partial<Pick<ICsvDataset, keyof Omit<ICsvDataset, keyof ObligatoryKeys>>>;
 
-export type Dataset = ObligatoryKeys & OptionalKeys;
-
-export type DbDataset = Pick<
-  ICsvDataset,
-  'reviews.text' | 'reviews.rating' | 'reviews.doRecommend' | 'reviews.numHelpful'
->;
+export type ProcessingDataset = ObligatoryKeys & OptionalKeys;

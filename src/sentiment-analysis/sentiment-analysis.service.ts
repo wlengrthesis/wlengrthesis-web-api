@@ -12,10 +12,11 @@ import {
   loadLayersModel,
   LayersModel,
 } from '@tensorflow/tfjs-node';
+import { Dataset, Prisma } from '@prisma/client';
 import { createReadStream } from 'fs';
 import { join } from 'path';
 import { parse } from 'csv-parse';
-import { Dataset, ICsvDataset, ObligatoryKeys, DbDataset } from './sentiment-analysis.types';
+import { ProcessingDataset, ICsvDataset, ObligatoryKeys } from './sentiment-analysis.types';
 import { Tokenizer } from '../common/helpers/tokenizer';
 import { TextProcessingHelper } from '../common/helpers/text-processing.helper';
 import { PrismaClientService } from '../prisma-client/prisma-client.service';
@@ -29,7 +30,7 @@ export class SentimentAnalysisService {
     maxSequenceLength: 32,
   } as const;
 
-  private dataset: Dataset[] = [];
+  private processingDataset: ProcessingDataset[] = [];
 
   private vocabularyActualSize: number;
   private trainingLabels: Tensor<Rank>;
@@ -106,8 +107,12 @@ export class SentimentAnalysisService {
     if (printSummary) this.trainingModel.summary();
   }
 
-  private loadDataset() {
-    //prisma
+  private async loadDataset() {
+    const dbDataset = await this.prisma.dataset.findMany();
+    if (dbDataset.length > 1) {
+      this.fillData(dbDataset);
+      return;
+    }
     this.loadCsvDataset();
   }
 
@@ -121,7 +126,7 @@ export class SentimentAnalysisService {
       })
       .on('end', () => {
         const keys = records.shift();
-        this.dataset = records.map(record =>
+        this.processingDataset = records.map(record =>
           record.reduce<ICsvDataset>((accumulator, value, index) => {
             return { ...accumulator, [keys[index]]: value };
           }, {} as ICsvDataset)
@@ -133,43 +138,50 @@ export class SentimentAnalysisService {
       });
   }
 
-  private prepareCsvDataset() {
-    const filteredDataset = this.dataset.map(record =>
-      Object.fromEntries(
-        Object.entries(record)
-          .filter(([key]) =>
-            (
-              ['reviews.text', 'reviews.rating', 'reviews.doRecommend', 'reviews.title', 'reviews.numHelpful'] as Array<
-                keyof Partial<ICsvDataset>
-              >
-            ).includes(key as keyof Partial<ICsvDataset>)
-          )
-          .filter(
-            ([key, value]) =>
-              ((key as keyof ObligatoryKeys) === 'reviews.rating' && value !== '') ||
-              ((key as keyof ObligatoryKeys) === 'reviews.text' && value !== '') ||
-              (key as keyof ObligatoryKeys) !== 'reviews.rating' ||
-              (key as keyof ObligatoryKeys) !== 'reviews.text'
-          )
-      )
-    ) as Dataset[];
+  private async prepareCsvDataset() {
+    const data = (
+      this.processingDataset.map(record =>
+        Object.fromEntries(
+          Object.entries(record)
+            .filter(([key]) =>
+              (
+                [
+                  'reviews.text',
+                  'reviews.rating',
+                  'reviews.doRecommend',
+                  'reviews.title',
+                  'reviews.numHelpful',
+                ] as Array<keyof Partial<ICsvDataset>>
+              ).includes(key as keyof Partial<ICsvDataset>)
+            )
+            .filter(
+              ([key, value]) =>
+                ((key as keyof ObligatoryKeys) === 'reviews.rating' && value !== '') ||
+                ((key as keyof ObligatoryKeys) === 'reviews.text' && value !== '') ||
+                (key as keyof ObligatoryKeys) !== 'reviews.rating' ||
+                (key as keyof ObligatoryKeys) !== 'reviews.text'
+            )
+        )
+      ) as ProcessingDataset[]
+    ).map<Partial<Dataset>>(record => ({
+      text: this.textProcessing.cleanText(record['reviews.text']),
+      rating: record['reviews.rating'],
+      doRecommend: record['reviews.doRecommend'],
+      numHeplful: record['reviews.numHelpful'],
+    })) as Prisma.DatasetCreateManyInput[];
 
-    this.fillData(filteredDataset);
+    this.prisma.dataset.createMany({ data });
+
+    this.fillData(data as Dataset[]);
   }
 
-  private fillData(dataset: Dataset[] | DbDataset[]) {
+  private fillData(dataset: Dataset[]) {
     const sentiments = dataset.map(value => {
-      const sentiment = this.determineSentiment(
-        value['reviews.rating'],
-        value['reviews.doRecommend'],
-        value['reviews.numHelpful']
-      );
+      const sentiment = this.determineSentiment(value.rating, value.doRecommend, value.numHeplful);
       return this.textProcessing.encodeSentiment(sentiment);
     });
 
-    const { sequences, vocabularyActualSize } = this.tokenizer.fitOnTexts(
-      dataset.map(record => this.textProcessing.cleanText(record['reviews.text']))
-    );
+    const { sequences, vocabularyActualSize } = this.tokenizer.fitOnTexts(dataset.map(record => record.text));
 
     this.trainingLabels = oneHot(tensor1d(sentiments, 'int32'), this.config.oneHotTensorDepth);
     this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
@@ -177,9 +189,9 @@ export class SentimentAnalysisService {
   }
 
   private determineSentiment(
-    rating: Dataset['reviews.rating'],
-    doRecommend: Dataset['reviews.doRecommend'],
-    numHelpful: Dataset['reviews.numHelpful']
+    rating: Dataset['rating'],
+    doRecommend: Dataset['doRecommend'],
+    numHelpful: Dataset['numHeplful']
   ) {
     if (Number(rating) >= 4) return 'positive';
     if (rating === '3' && doRecommend === 'TRUE' && Number(numHelpful) > 1) return 'neutral';
