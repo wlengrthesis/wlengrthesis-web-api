@@ -32,13 +32,14 @@ export class TextProcessingHelper {
     const cleanedText = text
       .replaceAll(/[^A-Za-z]+/gi, ' ') // remove any character other than letter
       .replaceAll(/http\S+/gi, ' ') //remove hyperlinks
-      .replaceAll(/ (don|didn|n|)('| )*t/gi, ' not') //expand contracted words
-      .replaceAll(/\'re/gi, ' are')
-      .replaceAll(/\'s/gi, ' is')
-      .replaceAll(/\'d/gi, ' would')
-      .replaceAll(/\'ll/gi, ' will')
-      .replaceAll(/\'ve/gi, ' have')
-      .replaceAll(/\'m/gi, ' am')
+      .replaceAll(/\s(don|doesn|didn|isn|aren|wasn|weren|n|)('| )*t(?!\S+)/gi, ' not ') //expand contracted words
+      .replaceAll(/\'n\'/gi, ' and ')
+      .replaceAll(/\'re/gi, ' are ')
+      .replaceAll(/\'s/gi, ' is ')
+      .replaceAll(/\'d/gi, ' would ')
+      .replaceAll(/\'ll/gi, ' will ')
+      .replaceAll(/\'ve/gi, ' have ')
+      .replaceAll(/\'m/gi, ' am ')
 
       .replaceAll(/\s+/gi, ' ') //remove extra spaces between words
 

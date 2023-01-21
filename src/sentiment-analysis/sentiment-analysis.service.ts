@@ -44,13 +44,14 @@ export class SentimentAnalysisService {
     private textProcessing: TextProcessingHelper,
     private prisma: PrismaClientService
   ) {
-    this.predictSentiment(
-      'if ads dont bother you then this may be a decent device purchased this \
-    for my kid and it was loaded down with so much spam it kept loading it up making \
-    it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
-    not very kid friendly oh you can pay to remove the ads but it wont remove them all \
-    buy the samsung better everything'
-    ).then(data => console.log(data));
+    // this.predictSentiment(
+    //   'if ads dont bother you then this may be a decent device purchased this \
+    // for my kid and it was loaded down with so much spam it kept loading it up making \
+    // it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
+    // not very kid friendly oh you can pay to remove the ads but it wont remove them all \
+    // buy the samsung better everything'
+    // ).then(data => console.log(data));
+    this.runModelTraining();
   }
 
   async predictSentiment(text: string) {
@@ -60,11 +61,10 @@ export class SentimentAnalysisService {
       this.config.maxSequenceLength
     );
     const predictions = this.trainedModel.predict(tensor2d(sequence)) as Tensor2D;
-    predictions.print();
     const sentiment = (await predictions.array()).map(prediction =>
       this.textProcessing.decodeSentiment(prediction.indexOf(Math.max(...prediction)))
     )[0];
-    //predictions.dispose();
+    predictions.dispose();
     return sentiment;
   }
 

@@ -6,10 +6,10 @@ export class Tokenizer {
   private readonly FILTER_REGEX = /[\\.,/#!$£%"@+-^&*;:{}=\-_.`~()]/g;
   private readonly SEPARATOR = ' ';
 
-  wordTokens: string[][] = [];
+  words: string[][] = [];
   wordCounts: Record<string, number>;
-  indexWord: Dictionary<string>;
-  wordIndex: Dictionary<string>;
+  indexedWords: Dictionary<string>;
+  vocabulary: Dictionary<string>;
   sequences: number[][] = [];
   vocabularyActualSize: number;
 
@@ -25,11 +25,11 @@ export class Tokenizer {
     _.compact(_.split(_.toLower(_.trim(_.replace(text, this.FILTER_REGEX, ''))), this.SEPARATOR));
 
   fitOnTexts(texts: string[]) {
-    this.wordTokens = _.memoize((texts: string[]) => _.map(texts, text => this.splitText(text)))(texts);
+    this.words = _.memoize((texts: string[]) => _.map(texts, text => this.splitText(text)))(texts);
 
-    this.wordCounts = _.countBy(_.flatten(this.wordTokens));
+    this.wordCounts = _.countBy(_.flatten(this.words));
 
-    this.indexWord = _.fromPairs(
+    this.indexedWords = _.fromPairs(
       _.concat(
         [[1, this.oovToken]],
         _.map(
@@ -38,18 +38,18 @@ export class Tokenizer {
             0,
             this.vocabularySize
           ),
-          ([word], index) => [index === 0 ? index + 2 : index + 1, word]
+          ([word], index) => [index + 2, word]
         )
       )
     );
 
-    this.wordIndex = _.invert(this.indexWord);
+    this.vocabulary = _.invert(this.indexedWords);
 
-    this.sequences = _.map(this.wordTokens, tokens =>
-      _.map(tokens, token => _.toNumber(_.get(this.wordIndex, token, this.wordIndex[this.oovToken])))
+    this.sequences = _.map(this.words, tokens =>
+      _.map(tokens, token => _.toNumber(_.get(this.vocabulary, token, this.vocabulary[this.oovToken])))
     );
 
-    this.vocabularyActualSize = _.size(this.wordIndex);
+    this.vocabularyActualSize = _.size(this.vocabulary);
 
     return {
       sequences: this.sequences,
@@ -60,7 +60,7 @@ export class Tokenizer {
   textToSequence(text: string) {
     if (this.vocabularyActualSize <= 1) throw Error('Tokenizer: vocabulary is not defined');
     return _.map(this.splitText(text), token =>
-      _.toNumber(_.get(this.wordIndex, token, this.wordIndex[this.oovToken]))
+      _.toNumber(_.get(this.vocabulary, token, this.vocabulary[this.oovToken]))
     );
   }
 }
