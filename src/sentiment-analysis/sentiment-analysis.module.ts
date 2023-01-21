@@ -3,6 +3,7 @@ import { SentimentAnalysisService } from './sentiment-analysis.service';
 import { Tokenizer } from '../common/helpers/tokenizer';
 import { TextProcessingHelper } from '../common/helpers/text-processing.helper';
 import { PrismaClientModule } from '../prisma-client/prisma-client.module';
+import { SentimentAnalysisController } from './sentiment-analysis.controller';
 
 @Module({
   imports: [PrismaClientModule],
@@ -14,5 +15,6 @@ import { PrismaClientModule } from '../prisma-client/prisma-client.module';
     },
     TextProcessingHelper,
   ],
+  controllers: [SentimentAnalysisController],
 })
 export class SentimentAnalysisModule {}

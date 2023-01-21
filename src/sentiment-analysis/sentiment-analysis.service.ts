@@ -11,6 +11,7 @@ import {
   Rank,
   loadLayersModel,
   LayersModel,
+  tidy,
 } from '@tensorflow/tfjs-node';
 import { createReadStream, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
@@ -44,27 +45,37 @@ export class SentimentAnalysisService {
     private textProcessing: TextProcessingHelper,
     private prisma: PrismaClientService
   ) {
-    this.predictSentiment(
-      'if ads dont bother you then this may be a decent device purchased this \
-    for my kid and it was loaded down with so much spam it kept loading it up making \
-    it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
-    not very kid friendly oh you can pay to remove the ads but it wont remove them all \
-    buy the samsung better everything'
-    ).then(data => console.log(data));
-    //this.runModelTraining();
+    // this.predictSentiment(
+    //   'if ads dont bother you then this may be a decent device purchased this \
+    // for my kid and it was loaded down with so much spam it kept loading it up making \
+    // it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
+    // not very kid friendly oh you can pay to remove the ads but it wont remove them all \
+    // buy the samsung better everything'
+    // ).then(data => console.log(data));
+    this.runModelTraining();
   }
 
   async predictSentiment(text: string) {
     await this.loadModel();
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Tokenizer size vocabulary when predicts sentiment: ', this.tokenizer.vocabularyActualSize);
+    }
     const sequence = this.textProcessing.padSequences(
       [this.tokenizer.textToSequence(this.textProcessing.cleanText(text))],
       this.config.maxSequenceLength
     );
+    if (process.env.NODE_ENV === 'development') {
+      tidy(() => {
+        tensor2d(sequence).print();
+      });
+    }
     const predictions = this.trainedModel.predict(tensor2d(sequence)) as Tensor2D;
+    if (process.env.NODE_ENV === 'development') predictions.print();
     const sentiment = (await predictions.array()).map(prediction =>
       this.textProcessing.decodeSentiment(prediction.indexOf(Math.max(...prediction)))
     )[0];
     predictions.dispose();
+    this.disposeTensors();
     return sentiment;
   }
 
@@ -76,10 +87,14 @@ export class SentimentAnalysisService {
     if (process.env.NODE_ENV === 'development') this.trainedModel.summary();
   }
 
-  async runModelTraining(samples?: Tensor2D, labels?: Tensor<Rank>, modelType = 'RNN') {
+  async runModelTraining(modelType = 'RNN') {
     this.processingModelId = modelType;
     await this.prepareModelTraining();
-    await this.trainingModel.fit(samples ? samples : this.trainingSamples, labels ? labels : this.trainingLabels, {
+    if (process.env.NODE_ENV === 'development') {
+      this.trainingSamples.print();
+      this.trainingLabels.print();
+    }
+    await this.trainingModel.fit(this.trainingSamples, this.trainingLabels, {
       epochs: 10,
       validationSplit: 0.2,
     });
@@ -90,7 +105,15 @@ export class SentimentAnalysisService {
   }
 
   private async prepareModelTraining() {
-    await this.loadCsvDataset();
+    try {
+      await this.loadCsvDataset();
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(error);
+        return;
+      }
+      throw Error('Error in processing csv: ', error);
+    }
     switch (this.processingModelId) {
       case 'RNN':
         this.createRNNModel();
@@ -125,12 +148,13 @@ export class SentimentAnalysisService {
     if (!vocabularySize && !this.tokenizer.vocabularyActualSize) {
       throw Error('Training model creation: size of vocabulary must be greater than zero');
     }
-
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Actual tokenizer vocabulary size during model creation: ', this.tokenizer.vocabularyActualSize);
+    }
     this.trainingModel = sequential();
-
     this.trainingModel.add(
       layers.embedding({
-        inputDim: vocabularySize ? vocabularySize : this.tokenizer.vocabularyActualSize,
+        inputDim: vocabularySize ? vocabularySize : this.tokenizer.vocabularyActualSize + 1,
         outputDim: 16,
         inputLength: this.config.maxSequenceLength,
       })
@@ -138,11 +162,9 @@ export class SentimentAnalysisService {
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.globalAveragePooling1d());
-    this.trainingModel.add(layers.dense({ units: 24, activation: 'relu' }));
+    this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
     this.trainingModel.add(layers.dense({ units: 3, activation: 'softmax' }));
-
     this.trainingModel.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
-
     if (process.env.NODE_ENV === 'development') this.trainingModel.summary();
   }
 
@@ -194,7 +216,6 @@ export class SentimentAnalysisService {
         ...record,
         'reviews.text': this.textProcessing.cleanText(record['reviews.text']),
       })) as ProcessingDataset[];
-
     const sentiments = dataset.map(value => {
       const sentiment = this.determineSentiment(
         value['reviews.rating'],
@@ -203,12 +224,9 @@ export class SentimentAnalysisService {
       );
       return this.textProcessing.encodeSentiment(sentiment);
     });
-
     const sequences = this.tokenizer.fitOnTexts(dataset.map(record => record['reviews.text']));
-
     this.trainingLabels = oneHot(tensor1d(sentiments, 'int32'), this.config.oneHotTensorDepth);
     this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
-
     this.saveVocabulary();
   }
 
@@ -224,7 +242,10 @@ export class SentimentAnalysisService {
       .catch(error => {
         if (error instanceof PrismaClientKnownRequestError) {
           // Error code P2002: Unique constraint failed - https://www.prisma.io/docs/reference/api-reference/error-reference#p2002
-          if (error.code === 'P2002') return;
+          if (error.code === 'P2002') {
+            if (process.env.NODE_ENV === 'development') console.warn(error);
+            return;
+          }
         }
         throw error;
       });
@@ -244,7 +265,7 @@ export class SentimentAnalysisService {
   }
 
   private disposeTensors() {
-    this.trainingSamples.dispose();
-    this.trainingLabels.dispose();
+    if (this.trainingSamples) this.trainingSamples.dispose();
+    if (this.trainingLabels) this.trainingLabels.dispose();
   }
 }
