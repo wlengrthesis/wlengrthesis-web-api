@@ -43,20 +43,17 @@ export class SentimentAnalysisService {
     private tokenizer: Tokenizer,
     private textProcessing: TextProcessingHelper,
     private prisma: PrismaClientService
-  ) {}
-
-  async runModelTraining(
-    samples: Tensor2D = this.trainingSamples,
-    labels: Tensor<Rank> = this.trainingLabels,
-    modelType = 'RNN'
   ) {
-    this.prepareModelTraining(modelType);
-    await this.trainingModel.fit(samples, labels, { epochs: 10, validationSplit: 0.2 });
-    await this.trainingModel.save(`file://${this.config.trainedModelUrl}/${modelType}`);
-    this.disposeTensors();
+    this.predictSentiment(
+      'if ads dont bother you then this may be a decent device purchased this \
+    for my kid and it was loaded down with so much spam it kept loading it up making \
+    it slow and laggy plus the carrasoul loadout makes it hard to navigate for kids \
+    not very kid friendly oh you can pay to remove the ads but it wont remove them all \
+    buy the samsung better everything'
+    ).then(data => console.log(data));
   }
 
-  async predict(text: string) {
+  async predictSentiment(text: string) {
     await this.loadModel();
     const sequence = this.textProcessing.padSequences(
       [this.tokenizer.textToSequence(this.textProcessing.cleanText(text))],
@@ -71,13 +68,23 @@ export class SentimentAnalysisService {
   }
 
   private async loadModel(printSummary = false) {
-    this.loadDataset();
+    await this.loadDataset();
     this.trainedModel = await loadLayersModel(`file://${this.config.trainedModelUrl}/model.json`);
     if (printSummary) this.trainedModel.summary();
   }
 
-  private prepareModelTraining(modelType: string) {
-    this.loadDataset();
+  async runModelTraining(samples?: Tensor2D, labels?: Tensor<Rank>, modelType = 'RNN') {
+    await this.prepareModelTraining(modelType);
+    await this.trainingModel.fit(samples ? samples : this.trainingSamples, labels ? labels : this.trainingLabels, {
+      epochs: 10,
+      validationSplit: 0.2,
+    });
+    await this.trainingModel.save(`file://${this.config.trainedModelUrl}/${modelType}`);
+    this.disposeTensors();
+  }
+
+  private async prepareModelTraining(modelType: string) {
+    await this.loadDataset();
     switch (modelType) {
       case 'RNN':
         this.createRNNModel();
@@ -85,6 +92,19 @@ export class SentimentAnalysisService {
       // TODO: create more models
       default:
         break;
+    }
+  }
+
+  private async loadDataset() {
+    const dbDataset = await this.prisma.dataset.findMany();
+    if (dbDataset.length > 1) {
+      this.fillData(dbDataset);
+      return;
+    }
+    try {
+      await this.loadCsvDataset();
+    } catch (error) {
+      console.warn(error);
     }
   }
 
@@ -107,35 +127,27 @@ export class SentimentAnalysisService {
     if (printSummary) this.trainingModel.summary();
   }
 
-  private async loadDataset() {
-    const dbDataset = await this.prisma.dataset.findMany();
-    if (dbDataset.length > 1) {
-      this.fillData(dbDataset);
-      return;
-    }
-    this.loadCsvDataset();
-  }
-
-  private loadCsvDataset() {
-    const records: string[][] = [];
-
-    createReadStream(join(process.cwd(), this.config.datasetUrl))
-      .pipe(parse({ delimiter: ',' }))
-      .on('data', (row: string[]) => {
-        records.push(row);
-      })
-      .on('end', () => {
-        const keys = records.shift();
-        this.processingDataset = records.map(record =>
-          record.reduce<ICsvDataset>((accumulator, value, index) => {
-            return { ...accumulator, [keys[index]]: value };
-          }, {} as ICsvDataset)
-        );
-        this.prepareCsvDataset();
-      })
-      .on('error', error => {
-        console.warn(error.message);
-      });
+  private async loadCsvDataset() {
+    return new Promise((resolve, reject) => {
+      const records: string[][] = [];
+      createReadStream(join(process.cwd(), this.config.datasetUrl))
+        .pipe(parse({ delimiter: ',' }))
+        .on('data', (row: string[]) => {
+          records.push(row);
+        })
+        .on('end', () => {
+          const keys = records.shift();
+          this.processingDataset = records.map(record =>
+            record.reduce<ICsvDataset>((accumulator, value, index) => {
+              return { ...accumulator, [keys[index]]: value };
+            }, {} as ICsvDataset)
+          );
+          resolve(this.prepareCsvDataset());
+        })
+        .on('error', error => {
+          reject(error);
+        });
+    });
   }
 
   private async prepareCsvDataset() {
@@ -170,9 +182,8 @@ export class SentimentAnalysisService {
       numHeplful: record['reviews.numHelpful'],
     })) as Prisma.DatasetCreateManyInput[];
 
-    this.prisma.dataset.createMany({ data });
-
     this.fillData(data as Dataset[]);
+    await this.prisma.dataset.createMany({ data });
   }
 
   private fillData(dataset: Dataset[]) {
