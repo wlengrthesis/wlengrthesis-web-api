@@ -32,8 +32,7 @@ export class TextProcessingHelper {
     const cleanedText = text
       .replaceAll(/[^A-Za-z]+/gi, ' ') // remove any character other than letter
       .replaceAll(/http\S+/gi, ' ') //remove hyperlinks
-
-      .replaceAll(/(do|did|won|wouldn|shouldn|couldn|can|n)('| )*t/gi, 'not') //expand contracted words
+      .replaceAll(/ (don|didn|n|)('| )*t/gi, ' not') //expand contracted words
       .replaceAll(/\'re/gi, ' are')
       .replaceAll(/\'s/gi, ' is')
       .replaceAll(/\'d/gi, ' would')

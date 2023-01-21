@@ -31,14 +31,14 @@ export class Tokenizer {
 
     this.indexWord = _.fromPairs(
       _.concat(
-        [[this.vocabularySize, this.oovToken]],
+        [[1, this.oovToken]],
         _.map(
           _.slice(
             _.sortBy(_.entries(this.wordCounts), ([_word], count) => count),
             0,
-            this.vocabularySize - 1
+            this.vocabularySize
           ),
-          ([word], index) => [index + 1, word]
+          ([word], index) => [index === 0 ? index + 2 : index + 1, word]
         )
       )
     );

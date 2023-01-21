@@ -54,16 +54,17 @@ export class SentimentAnalysisService {
   }
 
   async predictSentiment(text: string) {
-    await this.loadModel();
+    await this.loadModel(true);
     const sequence = this.textProcessing.padSequences(
       [this.tokenizer.textToSequence(this.textProcessing.cleanText(text))],
       this.config.maxSequenceLength
     );
     const predictions = this.trainedModel.predict(tensor2d(sequence)) as Tensor2D;
+    predictions.print();
     const sentiment = (await predictions.array()).map(prediction =>
       this.textProcessing.decodeSentiment(prediction.indexOf(Math.max(...prediction)))
     )[0];
-    predictions.dispose();
+    //predictions.dispose();
     return sentiment;
   }
 
@@ -115,9 +116,7 @@ export class SentimentAnalysisService {
       layers.embedding({ inputDim: vocabularySize, outputDim: 16, inputLength: this.config.maxSequenceLength })
     );
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
-    this.trainingModel.add(
-      layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }), mergeMode: 'concat' })
-    );
+    this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.globalAveragePooling1d());
     this.trainingModel.add(layers.dense({ units: 24, activation: 'relu' }));
     this.trainingModel.add(layers.dense({ units: 3, activation: 'softmax' }));
@@ -205,7 +204,7 @@ export class SentimentAnalysisService {
     numHelpful: Dataset['numHeplful']
   ) {
     if (Number(rating) >= 4) return 'positive';
-    if (rating === '3' && !!doRecommend === true && Number(numHelpful) > 1) return 'neutral';
+    if (rating === '3' && !!doRecommend && Number(numHelpful) > 1) return 'neutral';
     if (rating === '3' && !doRecommend && Number(numHelpful) > 1) return 'negative';
     if (rating === '3') return 'neutral';
     if (Number(rating) <= 2) return 'negative';
