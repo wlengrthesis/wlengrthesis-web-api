@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, MethodNotAllowedException } from '@nestjs/common';
 import {
   oneHot,
   sequential,
@@ -26,7 +26,7 @@ export class SentimentAnalysisService {
   private config = {
     datasetUrl: 'dist/assets/dataset/amazon_products_consumer_reviews_dataset.csv',
     trainedModelUrl: 'dist/assets/trained-model',
-    maxSequenceLength: 32,
+    maxSequenceLength: 16,
   } as const;
 
   private processingDataset: ProcessingDataset[] = [];
@@ -46,20 +46,21 @@ export class SentimentAnalysisService {
 
   async runModelTraining(modelType = 'RNN') {
     this.processingModelId = modelType;
-    await this.prepareModelTraining();
     if (process.env.NODE_ENV === 'development') {
+      await this.prepareModelTraining();
       this.trainingSamples.print();
       this.trainingLabels.print();
+      await this.trainingModel.fit(this.trainingSamples, this.trainingLabels, {
+        epochs: 10,
+        validationSplit: 0.2,
+      });
+      const modelDirectory = join(process.cwd(), `${this.config.trainedModelUrl}/${modelType}`);
+      if (!existsSync(modelDirectory)) mkdirSync(modelDirectory, { recursive: true });
+      await this.trainingModel.save(`file://${modelDirectory}`);
+      this.disposeTensors();
+      return true;
     }
-    await this.trainingModel.fit(this.trainingSamples, this.trainingLabels, {
-      epochs: 10,
-      validationSplit: 0.4,
-    });
-    const modelDirectory = join(process.cwd(), `${this.config.trainedModelUrl}/${modelType}`);
-    if (!existsSync(modelDirectory)) mkdirSync(modelDirectory, { recursive: true });
-    await this.trainingModel.save(`file://${modelDirectory}`);
-    this.disposeTensors();
-    return true;
+    throw new MethodNotAllowedException('Cannot train model on production build');
   }
 
   async predictSentiment(text: string) {
@@ -79,10 +80,10 @@ export class SentimentAnalysisService {
     const predictions = this.trainedModel.predict(tensor2d(sequence)) as Tensor2D;
     if (process.env.NODE_ENV === 'development') predictions.print();
     const sentiment = (await predictions.array()).map<IPrediction>(prediction => {
-      const maxValue = prediction.indexOf(Math.max(...prediction));
+      const label = prediction.indexOf(Math.max(...prediction));
       return {
-        sentiment: this.textProcessing.decodeSentiment(maxValue),
-        probability: `${maxValue.toFixed(2)}%`,
+        sentiment: this.textProcessing.decodeSentiment(label),
+        probability: `${(prediction[label] * 100).toFixed(2)}%`,
       };
     })[0];
     predictions.dispose();
@@ -153,7 +154,7 @@ export class SentimentAnalysisService {
     this.trainingModel.add(
       layers.embedding({
         inputDim: vocabularySize ? vocabularySize + 1 : this.tokenizer.vocabularyActualSize + 1,
-        outputDim: 16,
+        outputDim: 8,
         inputLength: this.config.maxSequenceLength,
       })
     );
