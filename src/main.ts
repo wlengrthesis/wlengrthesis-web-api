@@ -1,5 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { securityHeaders } from './common/middleware/security-headers.middleware';
 import { PrismaClientModule } from './prisma-client/prisma-client.module';
@@ -11,6 +12,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe());
   app.enableCors({ origin: process.env.CORS_ORIGIN });
   app.use(securityHeaders);
+  app.use(helmet());
 
   const prismaService = app.select(PrismaClientModule).get(PrismaClientService, { strict: true });
   await prismaService.enableShutdownHooks(app);

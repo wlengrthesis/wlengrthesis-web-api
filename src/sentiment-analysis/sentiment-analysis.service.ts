@@ -121,9 +121,7 @@ export class SentimentAnalysisService {
   }
 
   private async loadDataset() {
-    const dataset = await this.prisma.dataset.findUnique({
-      where: { modelId: this.processingModelId },
-    });
+    const dataset = await this.prisma.dataset.findUnique({ where: { modelId: this.processingModelId } });
     if (dataset && dataset.vocabulary && dataset.vocabularyActualSize) {
       const parsedVocabulary = JSON.parse(dataset.vocabulary) as Vocabulary;
       this.tokenizer.synchronizeVocabulary(parsedVocabulary, dataset.vocabularyActualSize);
@@ -217,7 +215,7 @@ export class SentimentAnalysisService {
       return this.textProcessing.encodeSentiment(sentiment);
     });
     const sequences = this.tokenizer.fitOnTexts(dataset.map(record => record['reviews.text']));
-    this.trainingLabels = oneHot(tensor1d(sentiments, 'int32'), 2); // oneHotTensorDepth: 2, based on number of possible values returned by encodeSentiment
+    this.trainingLabels = oneHot(tensor1d(sentiments, 'int32'), 2); // oneHotTensorDepth: number of possible values returned by encodeSentiment func
     this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
     this.saveVocabulary();
   }

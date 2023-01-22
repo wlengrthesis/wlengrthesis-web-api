@@ -27,6 +27,7 @@ specifiers:
   eslint: ^8.32.0
   eslint-config-prettier: ^8.6.0
   eslint-plugin-prettier: ^4.0.0
+  helmet: ^6.0.1
   jest: 29.3.1
   lodash: ^4.17.21
   passport: ^0.6.0
@@ -57,6 +58,7 @@ dependencies:
   class-transformer: 0.5.1
   class-validator: 0.14.0
   csv-parse: 5.3.3
+  helmet: 6.0.1
   lodash: 4.17.21
   passport: 0.6.0
   passport-jwt: 4.0.1
@@ -3222,6 +3224,11 @@ packages:
     engines: {node: '>= 0.4.0'}
     dependencies:
       function-bind: 1.1.1
+
+  /helmet/6.0.1:
+    resolution: {integrity: sha512-8wo+VdQhTMVBMCITYZaGTbE4lvlthelPYSvoyNvk4RECTmrVjMerp9RfUOQXZWLvCcAn1pKj7ZRxK4lI9Alrcw==}
+    engines: {node: '>=14.0.0'}
+    dev: false
 
   /hexoid/1.0.0:
     resolution: {integrity: sha512-QFLV0taWQOZtvIRIAdBChesmogZrtuXvVWsFHZTk2SU+anspqZ2vMnoLg7IE1+Uk16N19APic1BuF8bC8c2m5g==}
