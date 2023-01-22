@@ -2,14 +2,12 @@ import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class TextProcessingHelper {
-  encodeSentiment(sentiment: 'positive' | 'neutral' | 'negative') {
+  encodeSentiment(sentiment: 'positive' | 'negative') {
     switch (sentiment) {
       case 'negative':
         return 0;
-      case 'neutral':
-        return 1;
       case 'positive':
-        return 2;
+        return 1;
       default:
         throw Error('Sentiment must be specified');
     }
@@ -20,8 +18,6 @@ export class TextProcessingHelper {
       case 0:
         return 'negative';
       case 1:
-        return 'neutral';
-      case 2:
         return 'positive';
       default:
         throw Error('Label must be specified');

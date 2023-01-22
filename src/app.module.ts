@@ -6,6 +6,7 @@ import { AccessTokenGuard } from './auth/guards';
 import { PrismaClientModule } from './prisma-client/prisma-client.module';
 import { UserModule } from './user/user.module';
 import { SentimentAnalysisModule } from './sentiment-analysis/sentiment-analysis.module';
+import { TextModule } from './text/text.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { SentimentAnalysisModule } from './sentiment-analysis/sentiment-analysis
     UserModule,
     AuthModule,
     SentimentAnalysisModule,
+    TextModule,
   ],
   providers: [
     {

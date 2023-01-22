@@ -24,7 +24,24 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  texts Text[]
+
   @@map("users")
+}
+
+model Text {
+  id Int @id @default(autoincrement())
+
+  text      String?
+  sentiment String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  User   User @relation(fields: [userId], references: [id])
+  userId Int
+
+  @@map("texts")
 }
 
 model Dataset {
