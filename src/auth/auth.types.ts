@@ -18,6 +18,9 @@ export type Tokens = {
 export type JwtPayload = {
   sub: number;
   email: string;
+  role: Role;
 };
 
 export type JwtPayloadWithRefreshToken = JwtPayload & Pick<Tokens, 'refresh_token'>;
+
+export type Role = 'SUPERADMIN' | 'ADMIN' | 'USER';

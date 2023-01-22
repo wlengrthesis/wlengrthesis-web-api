@@ -44,6 +44,24 @@ export class SentimentAnalysisService {
     private prisma: PrismaClientService
   ) {}
 
+  async runModelTraining(modelType = 'RNN') {
+    this.processingModelId = modelType;
+    await this.prepareModelTraining();
+    if (process.env.NODE_ENV === 'development') {
+      this.trainingSamples.print();
+      this.trainingLabels.print();
+    }
+    await this.trainingModel.fit(this.trainingSamples, this.trainingLabels, {
+      epochs: 10,
+      validationSplit: 0.4,
+    });
+    const modelDirectory = join(process.cwd(), `${this.config.trainedModelUrl}/${modelType}`);
+    if (!existsSync(modelDirectory)) mkdirSync(modelDirectory, { recursive: true });
+    await this.trainingModel.save(`file://${modelDirectory}`);
+    this.disposeTensors();
+    return true;
+  }
+
   async predictSentiment(text: string) {
     await this.loadModel();
     if (process.env.NODE_ENV === 'development') {
@@ -68,30 +86,18 @@ export class SentimentAnalysisService {
     return sentiment;
   }
 
+  async saveTextWithPrediction(userId: number, text: string, sentiment: 'positive' | 'negative') {
+    await this.prisma.text.create({ data: { userId, text, sentiment } }).catch(error => {
+      if (process.env.NODE_ENV === 'development') console.warn(error);
+    });
+  }
+
   private async loadModel() {
     await this.loadDataset();
     this.trainedModel = await loadLayersModel(
       `file://${this.config.trainedModelUrl}/${this.processingModelId}/model.json`
     );
     if (process.env.NODE_ENV === 'development') this.trainedModel.summary();
-  }
-
-  async runModelTraining(modelType = 'RNN') {
-    this.processingModelId = modelType;
-    await this.prepareModelTraining();
-    if (process.env.NODE_ENV === 'development') {
-      this.trainingSamples.print();
-      this.trainingLabels.print();
-    }
-    await this.trainingModel.fit(this.trainingSamples, this.trainingLabels, {
-      epochs: 10,
-      validationSplit: 0.4,
-    });
-    const modelDirectory = join(process.cwd(), `${this.config.trainedModelUrl}/${modelType}`);
-    if (!existsSync(modelDirectory)) mkdirSync(modelDirectory, { recursive: true });
-    await this.trainingModel.save(`file://${modelDirectory}`);
-    this.disposeTensors();
-    return true;
   }
 
   private async prepareModelTraining() {

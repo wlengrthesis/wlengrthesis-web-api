@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as argon from 'argon2';
 import { randomBytes } from 'crypto';
-import { AuthDto, Tokens, JwtPayload } from './auth.types';
+import { AuthDto, Tokens, JwtPayload, Role } from './auth.types';
 import { UserService } from '../user/user.service';
 
 @Injectable()
@@ -17,10 +17,11 @@ export class AuthService {
 
   constructor(private config: ConfigService, private jwtService: JwtService, private userService: UserService) {}
 
-  private async getTokens(userId: number, email: string): Promise<Tokens> {
+  private async getTokens(userId: number, email: string, role: Role): Promise<Tokens> {
     const jwtPayload: JwtPayload = {
       sub: userId,
-      email: email,
+      email,
+      role,
     };
 
     const [access_token, refresh_token] = await Promise.all([
@@ -55,9 +56,9 @@ export class AuthService {
       salt: randomBytes(16),
     });
 
-    const { id, email } = await this.userService.create(dto.email, hashedPassword);
+    const { id, email, role } = await this.userService.create(dto.email, hashedPassword);
 
-    const tokens = await this.getTokens(id, email);
+    const tokens = await this.getTokens(id, email, role);
     await this.updateRefreshTokenHash(id, tokens.refresh_token);
 
     return tokens;
@@ -71,7 +72,7 @@ export class AuthService {
     const passwordMatches = await argon.verify(user.hashedPassword, password);
     if (!passwordMatches) throw new ForbiddenException('Access Denied');
 
-    const tokens = await this.getTokens(user.id, user.email);
+    const tokens = await this.getTokens(user.id, user.email, user.role);
     await this.updateRefreshTokenHash(user.id, tokens.refresh_token);
 
     return tokens;
@@ -89,7 +90,7 @@ export class AuthService {
     const refreshTokensMatches = await argon.verify(user.hashedRefreshToken, refreshToken);
     if (!refreshTokensMatches) throw new ForbiddenException('Access Denied');
 
-    const tokens = await this.getTokens(user.id, user.email);
+    const tokens = await this.getTokens(user.id, user.email, user.role);
     await this.updateRefreshTokenHash(user.id, tokens.refresh_token);
 
     return tokens;

@@ -18,6 +18,8 @@ model User {
   firstName String?
   lastName  String?
 
+  role Role @default(USER)
+
   hashedPassword     String
   hashedRefreshToken String?
 
@@ -54,4 +56,10 @@ model Dataset {
   createdAt DateTime @default(now())
 
   @@map("dataset")
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  USER
 }
