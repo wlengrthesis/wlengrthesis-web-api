@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { GetCurrentUser } from '../auth/decorators';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -11,8 +11,7 @@ export class SentimentAnalysisController {
   constructor(private sentimentAnalysisService: SentimentAnalysisService) {}
 
   @Roles('SUPERADMIN', 'ADMIN', 'USER')
-  @Get('predict')
-  @HttpCode(HttpStatus.OK)
+  @Post('predict')
   async predict(
     @GetCurrentUser('sub') userId: number,
     @Body() { text }: PredictionDto
@@ -24,7 +23,6 @@ export class SentimentAnalysisController {
 
   @Roles('SUPERADMIN')
   @Get('train')
-  @HttpCode(HttpStatus.OK)
   train(): Promise<boolean> {
     return this.sentimentAnalysisService.runModelTraining();
   }
