@@ -91,6 +91,7 @@ export class SentimentAnalysisService {
     if (!existsSync(modelDirectory)) mkdirSync(modelDirectory, { recursive: true });
     await this.trainingModel.save(`file://${modelDirectory}`);
     this.disposeTensors();
+    return true;
   }
 
   private async prepareModelTraining() {

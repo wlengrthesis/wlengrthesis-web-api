@@ -1,6 +1,6 @@
-import { TextService } from './text.service';
 import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
-import { TextDTO } from './text.types';
+import { TextService } from './text.service';
+import { TextDto } from './text.types';
 
 @Controller('text')
 export class TextController {
@@ -8,7 +8,7 @@ export class TextController {
 
   @Get('all')
   @HttpCode(HttpStatus.OK)
-  getAll(): Promise<TextDTO[]> {
+  getAll(): Promise<TextDto[]> {
     return this.textService.getAll();
   }
 }

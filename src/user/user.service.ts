@@ -15,7 +15,7 @@ export class UserService {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
-  async getAll(params: {
+  async getMany(params?: {
     skip?: number;
     take?: number;
     cursor?: Prisma.UserWhereUniqueInput;

@@ -1,4 +1,12 @@
-import { MinLength } from 'class-validator';
+import { IsString, MinLength } from 'class-validator';
+
+export class PredictionDto {
+  @IsString()
+  @MinLength(200, {
+    message: 'The provided text is too short for the model to make an effective prediction',
+  })
+  text: string;
+}
 
 export interface ICsvDataset {
   id: string;

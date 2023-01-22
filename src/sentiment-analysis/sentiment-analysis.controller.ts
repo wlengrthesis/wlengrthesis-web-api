@@ -1,6 +1,6 @@
-import { TextDTO } from './../text/text.types';
 import { Body, Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
 import { SentimentAnalysisService } from './sentiment-analysis.service';
+import { PredictionDto } from './sentiment-analysis.types';
 
 @Controller('sentiment-analysis')
 export class SentimentAnalysisController {
@@ -8,13 +8,13 @@ export class SentimentAnalysisController {
 
   @Get('predict')
   @HttpCode(HttpStatus.OK)
-  predict(@Body() dto: TextDTO): Promise<string> {
-    return this.sentimentAnalysisService.predictSentiment(dto.text);
+  predict(@Body() { text }: PredictionDto): Promise<'negative' | 'positive'> {
+    return this.sentimentAnalysisService.predictSentiment(text);
   }
 
   @Get('train')
   @HttpCode(HttpStatus.OK)
-  train(): Promise<void> {
+  train(): Promise<boolean> {
     return this.sentimentAnalysisService.runModelTraining();
   }
 }
