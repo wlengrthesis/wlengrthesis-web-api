@@ -1,11 +1,18 @@
 import { IsString, MinLength } from 'class-validator';
 
-export class PredictionDto {
+const TEXT_MIN_LENGTH = 100;
+
+export class AnalysisDto {
   @IsString()
-  @MinLength(200, {
-    message: 'The provided text is too short for the model to make an effective prediction',
+  @MinLength(TEXT_MIN_LENGTH, {
+    message: `The provided text is too short for the model to make an effective prediction. Min. length: ${TEXT_MIN_LENGTH}`,
   })
   text: string;
+}
+
+export interface IPrediction {
+  sentiment: 'positive' | 'negative';
+  probability: `${string}%`;
 }
 
 export interface ICsvDataset {

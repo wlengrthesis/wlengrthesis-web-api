@@ -23,11 +23,12 @@ export class TextService {
       orderBy,
     });
 
-    return texts.map(text => ({
-      textId: text.id,
-      userId: text.userId,
-      text: text.text,
-      sentiment: text.sentiment,
+    return texts.map(({ id, userId, text, sentiment, probability }) => ({
+      textId: id,
+      userId,
+      text,
+      sentiment,
+      probability,
     }));
   }
 }

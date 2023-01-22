@@ -13,4 +13,7 @@ export class TextDto {
 
   @IsString()
   sentiment: string;
+
+  @IsString()
+  probability: string;
 }

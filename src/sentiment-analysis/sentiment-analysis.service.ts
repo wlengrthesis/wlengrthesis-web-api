@@ -16,7 +16,7 @@ import {
 import { createReadStream, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { parse } from 'csv-parse';
-import { ProcessingDataset, ICsvDataset, RequiredKeys } from './sentiment-analysis.types';
+import { ProcessingDataset, ICsvDataset, RequiredKeys, IPrediction } from './sentiment-analysis.types';
 import { Tokenizer, Vocabulary } from '../common/helpers/tokenizer';
 import { TextProcessingHelper } from '../common/helpers/text-processing.helper';
 import { PrismaClientService } from '../prisma-client/prisma-client.service';
@@ -78,16 +78,20 @@ export class SentimentAnalysisService {
     }
     const predictions = this.trainedModel.predict(tensor2d(sequence)) as Tensor2D;
     if (process.env.NODE_ENV === 'development') predictions.print();
-    const sentiment = (await predictions.array()).map(prediction =>
-      this.textProcessing.decodeSentiment(prediction.indexOf(Math.max(...prediction)))
-    )[0];
+    const sentiment = (await predictions.array()).map<IPrediction>(prediction => {
+      const maxValue = prediction.indexOf(Math.max(...prediction));
+      return {
+        sentiment: this.textProcessing.decodeSentiment(maxValue),
+        probability: `${maxValue.toFixed(2)}%`,
+      };
+    })[0];
     predictions.dispose();
     this.disposeTensors();
     return sentiment;
   }
 
-  async saveTextWithPrediction(userId: number, text: string, sentiment: 'positive' | 'negative') {
-    await this.prisma.text.create({ data: { userId, text, sentiment } }).catch(error => {
+  async saveTextWithPrediction(userId: number, text: string, prediction: IPrediction) {
+    await this.prisma.text.create({ data: { userId, text, ...prediction } }).catch(error => {
       if (process.env.NODE_ENV === 'development') console.warn(error);
     });
   }
@@ -191,11 +195,9 @@ export class SentimentAnalysisService {
         Object.fromEntries(
           Object.entries(record)
             .filter(([key]) =>
-              (
-                ['reviews.text', 'reviews.rating', 'reviews.doRecommend', 'reviews.numHelpful'] as Array<
-                  keyof RequiredKeys
-                >
-              ).includes(key as keyof RequiredKeys)
+              (['reviews.text', 'reviews.rating', 'reviews.doRecommend'] as Array<keyof RequiredKeys>).includes(
+                key as keyof RequiredKeys
+              )
             )
             .filter(
               ([key, value]) =>
