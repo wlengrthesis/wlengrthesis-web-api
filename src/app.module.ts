@@ -7,6 +7,7 @@ import { PrismaClientModule } from './prisma-client/prisma-client.module';
 import { UserModule } from './user/user.module';
 import { SentimentAnalysisModule } from './sentiment-analysis/sentiment-analysis.module';
 import { TextModule } from './text/text.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { TextModule } from './text/text.module';
     SentimentAnalysisModule,
     TextModule,
   ],
+  controllers: [AppController],
   providers: [
     {
       provide: APP_GUARD,
