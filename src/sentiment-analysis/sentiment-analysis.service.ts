@@ -26,7 +26,7 @@ export class SentimentAnalysisService {
   private config = {
     datasetUrl: 'dist/assets/dataset/amazon_products_consumer_reviews_dataset.csv',
     trainedModelUrl: 'dist/assets/trained-model',
-    maxSequenceLength: 16,
+    maxSequenceLength: 32,
   } as const;
 
   private processingDataset: ProcessingDataset[] = [];
@@ -45,8 +45,8 @@ export class SentimentAnalysisService {
   ) {}
 
   async runModelTraining(modelType = 'RNN') {
-    this.processingModelId = modelType;
     if (process.env.NODE_ENV === 'development') {
+      this.processingModelId = modelType;
       await this.prepareModelTraining();
       this.trainingSamples.print();
       this.trainingLabels.print();
@@ -60,10 +60,11 @@ export class SentimentAnalysisService {
       this.disposeTensors();
       return true;
     }
-    throw new MethodNotAllowedException('Cannot train model on production build');
+    throw new MethodNotAllowedException('Cannot train model on production server. Use localhost instead');
   }
 
-  async predictSentiment(text: string) {
+  async predictSentiment(text: string, modelType = 'GRU') {
+    this.processingModelId = modelType;
     await this.loadModel();
     if (process.env.NODE_ENV === 'development') {
       console.log('Tokenizer size vocabulary when predicts sentiment: ', this.tokenizer.vocabularyActualSize);
@@ -115,9 +116,15 @@ export class SentimentAnalysisService {
       }
       throw Error('Error in processing csv: ', error);
     }
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Actual tokenizer vocabulary size during model creation: ', this.tokenizer.vocabularyActualSize);
+    }
     switch (this.processingModelId) {
       case 'RNN':
         this.createRNNModel();
+        break;
+      case 'GRU':
+        this.createGRUModel();
         break;
       // TODO: create more models
       default:
@@ -147,20 +154,42 @@ export class SentimentAnalysisService {
     if (!vocabularySize && !this.tokenizer.vocabularyActualSize) {
       throw Error('Training model creation: size of vocabulary must be greater than zero');
     }
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Actual tokenizer vocabulary size during model creation: ', this.tokenizer.vocabularyActualSize);
-    }
     this.trainingModel = sequential();
     this.trainingModel.add(
       layers.embedding({
         inputDim: vocabularySize ? vocabularySize + 1 : this.tokenizer.vocabularyActualSize + 1,
-        outputDim: 8,
+        outputDim: 16,
         inputLength: this.config.maxSequenceLength,
       })
     );
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
-    this.trainingModel.add(layers.globalAveragePooling1d());
+    this.trainingModel.add(layers.globalMaxPooling1d());
+    this.trainingModel.add(layers.dense({ units: 24, activation: 'relu' }));
+    this.trainingModel.add(layers.dropout({ rate: 0.2 }));
+    this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
+    this.trainingModel.add(layers.dense({ units: 2, activation: 'sigmoid' }));
+    this.trainingModel.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
+    if (process.env.NODE_ENV === 'development') this.trainingModel.summary();
+  }
+
+  private createGRUModel(vocabularySize?: number) {
+    if (!vocabularySize && !this.tokenizer.vocabularyActualSize) {
+      throw Error('Training model creation: size of vocabulary must be greater than zero');
+    }
+    this.trainingModel = sequential();
+    this.trainingModel.add(
+      layers.embedding({
+        inputDim: vocabularySize ? vocabularySize + 1 : this.tokenizer.vocabularyActualSize + 1,
+        outputDim: 16,
+        inputLength: this.config.maxSequenceLength,
+      })
+    );
+    this.trainingModel.add(layers.bidirectional({ layer: layers.gru({ units: 64, returnSequences: true }) }));
+    this.trainingModel.add(layers.bidirectional({ layer: layers.gru({ units: 64, returnSequences: true }) }));
+    this.trainingModel.add(layers.globalMaxPooling1d());
+    this.trainingModel.add(layers.dense({ units: 24, activation: 'relu' }));
+    this.trainingModel.add(layers.dropout({ rate: 0.2 }));
     this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
     this.trainingModel.add(layers.dense({ units: 2, activation: 'sigmoid' }));
     this.trainingModel.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
