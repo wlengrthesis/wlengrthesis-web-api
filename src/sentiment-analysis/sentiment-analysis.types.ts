@@ -1,6 +1,6 @@
 import { IsString, MinLength } from 'class-validator';
 
-const TEXT_MIN_LENGTH = 100;
+const TEXT_MIN_LENGTH = 10;
 
 export class AnalysisDto {
   @IsString()
