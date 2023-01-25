@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as argon from 'argon2';
 import { randomBytes } from 'crypto';
-import { AuthDto, Tokens, JwtPayload, Role } from './auth.types';
+import { UserDto, Tokens, JwtPayload, Role, UserSignIn, UserSignUp } from './auth.types';
 import { UserService } from '../user/user.service';
 
 @Injectable()
@@ -50,21 +50,21 @@ export class AuthService {
     await this.userService.updateRefreshToken(userId, hashedRefreshToken);
   }
 
-  async signUpLocal(dto: AuthDto): Promise<Tokens> {
+  async signUpLocal(dto: UserDto): Promise<UserSignUp> {
     const hashedPassword = await argon.hash(dto.password, {
       ...this.hashingConfig,
       salt: randomBytes(16),
     });
 
-    const { id, email, role } = await this.userService.create(dto.email, hashedPassword);
+    const { id, email, role } = await this.userService.create(dto.email, dto.firstName, dto.lastName, hashedPassword);
 
     const tokens = await this.getTokens(id, email, role);
     await this.updateRefreshTokenHash(id, tokens.refresh_token);
 
-    return tokens;
+    return { id, ...tokens };
   }
 
-  async signInLocal({ email, password }: AuthDto): Promise<Tokens> {
+  async signInLocal({ email, password }: UserDto): Promise<UserSignIn> {
     const user = await this.userService.getOneByEmail(email);
 
     if (!user) throw new ForbiddenException('Access Denied');
@@ -75,7 +75,7 @@ export class AuthService {
     const tokens = await this.getTokens(user.id, user.email, user.role);
     await this.updateRefreshTokenHash(user.id, tokens.refresh_token);
 
-    return tokens;
+    return { id: user.id, firstName: user.firstName, lastName: user.lastName, ...tokens };
   }
 
   async logout(userId: number): Promise<boolean> {

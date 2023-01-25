@@ -34,12 +34,16 @@ export class UserService {
 
   async create(
     email: Prisma.UserCreateInput['email'],
+    firstName: Prisma.UserCreateInput['firstName'],
+    lastName: Prisma.UserCreateInput['lastName'],
     hashedPassword: Prisma.UserCreateInput['hashedPassword']
   ): Promise<User> {
     return this.prisma.user
       .create({
         data: {
           email,
+          firstName,
+          lastName,
           hashedPassword,
         },
       })

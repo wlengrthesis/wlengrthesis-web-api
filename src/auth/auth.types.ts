@@ -1,6 +1,7 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, ValidateIf } from 'class-validator';
 
-export class AuthDto {
+export type Role = 'SUPERADMIN' | 'ADMIN' | 'USER';
+export class UserDto {
   @IsNotEmpty()
   @IsString()
   email: string;
@@ -8,12 +9,29 @@ export class AuthDto {
   @IsNotEmpty()
   @IsString()
   password: string;
+
+  @IsString()
+  @ValidateIf((_object, value) => value !== null)
+  firstName: string;
+  @IsString()
+  @ValidateIf((_object, value) => value !== null)
+  lastName: string;
 }
 
 export type Tokens = {
   access_token: string;
   refresh_token: string;
 };
+
+export type UserSignIn = {
+  id: number;
+  firstName: string;
+  lastName: string;
+} & Tokens;
+
+export type UserSignUp = {
+  id: number;
+} & Tokens;
 
 export type JwtPayload = {
   sub: number;
@@ -22,5 +40,3 @@ export type JwtPayload = {
 };
 
 export type JwtPayloadWithRefreshToken = JwtPayload & Pick<Tokens, 'refresh_token'>;
-
-export type Role = 'SUPERADMIN' | 'ADMIN' | 'USER';

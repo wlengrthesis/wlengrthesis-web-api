@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
-import { AuthDto, Tokens } from './auth.types';
+import { UserDto, Tokens } from './auth.types';
 import { AuthService } from './auth.service';
 import { AllowUnauthorizedRequest, GetCurrentUser } from './decorators';
 import { RefreshTokenGuard } from './guards';
@@ -11,14 +11,14 @@ export class AuthController {
   @AllowUnauthorizedRequest()
   @Post('local/signup')
   @HttpCode(HttpStatus.CREATED)
-  signUpLocal(@Body() dto: AuthDto): Promise<Tokens> {
+  signUpLocal(@Body() dto: UserDto): Promise<Tokens> {
     return this.authService.signUpLocal(dto);
   }
 
   @AllowUnauthorizedRequest()
   @Post('local/signin')
   @HttpCode(HttpStatus.OK)
-  signInLocal(@Body() dto: AuthDto): Promise<Tokens> {
+  signInLocal(@Body() dto: UserDto): Promise<Tokens> {
     return this.authService.signInLocal(dto);
   }
 
