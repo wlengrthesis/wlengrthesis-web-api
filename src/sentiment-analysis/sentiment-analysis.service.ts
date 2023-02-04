@@ -164,9 +164,9 @@ export class SentimentAnalysisService {
     );
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
-    this.trainingModel.add(layers.globalMaxPooling1d());
-    this.trainingModel.add(layers.dense({ units: 24, activation: 'relu' }));
-    this.trainingModel.add(layers.dropout({ rate: 0.2 }));
+    this.trainingModel.add(layers.globalAveragePooling1d());
+    this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
+    this.trainingModel.add(layers.dropout({ rate: 0.26 }));
     this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
     this.trainingModel.add(layers.dense({ units: 2, activation: 'sigmoid' }));
     this.trainingModel.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
@@ -187,9 +187,9 @@ export class SentimentAnalysisService {
     );
     this.trainingModel.add(layers.bidirectional({ layer: layers.gru({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.bidirectional({ layer: layers.gru({ units: 64, returnSequences: true }) }));
-    this.trainingModel.add(layers.globalMaxPooling1d());
-    this.trainingModel.add(layers.dense({ units: 24, activation: 'relu' }));
-    this.trainingModel.add(layers.dropout({ rate: 0.2 }));
+    this.trainingModel.add(layers.globalAveragePooling1d());
+    this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
+    this.trainingModel.add(layers.dropout({ rate: 0.26 }));
     this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
     this.trainingModel.add(layers.dense({ units: 2, activation: 'sigmoid' }));
     this.trainingModel.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
