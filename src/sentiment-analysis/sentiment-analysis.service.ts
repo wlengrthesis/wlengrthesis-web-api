@@ -14,7 +14,7 @@ import {
   tidy,
   data,
   TensorContainer,
-} from '@tensorflow/tfjs-node-gpu';
+} from '@tensorflow/tfjs-node';
 import { createReadStream, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { parse } from 'csv-parse';
@@ -27,7 +27,7 @@ import v8 from 'node:v8';
 @Injectable()
 export class SentimentAnalysisService {
   private config = {
-    datasetUrl: 'dist/assets/dataset/fixed_train2.csv',
+    datasetUrl: 'dist/assets/dataset/fixedTrain/fixed_train2.csv',
     validation: 'dist/assets/dataset/fixed_train1.csv',
     trainedModelUrl: 'dist/assets/trained-model',
     maxSequenceLength: 32,
@@ -54,17 +54,17 @@ export class SentimentAnalysisService {
   async runModelTraining(modelType = 'GRU_LARGE') {
     if (process.env.NODE_ENV === 'development') {
       this.processingModelId = modelType;
-      let dataset, validation: data.CSVDataset;
+      let dataset: data.CSVDataset;
       try {
-        [dataset, validation] = await this.prepareCsvDataset();
+        dataset = await this.prepareCsvDataset();
       } catch (error) {
         console.warn(error);
       }
       const convertedData = await dataset.toArray();
-      const sequences = this.tokenizer.fitOnTexts(convertedData.map(data => data.xs.Review));
+      const sequences = this.tokenizer.fitOnTexts(convertedData.map((data: any) => data.xs.Review));
       this.trainingLabels = oneHot(
         tensor1d(
-          convertedData.map(data => data.ys.Label),
+          convertedData.map((data: any) => (data.ys.Label === 2 ? 1 : 0)),
           'int32'
         ),
         2
@@ -73,32 +73,10 @@ export class SentimentAnalysisService {
       this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
       this.trainingSamples.print();
       this.saveVocabulary();
-      let validationData = [];
-      await validation.toArray().then(array => {
-        validationData = array.map((el: any) => ({
-          xs: this.tokenizer.textToSequence(this.textProcessing.cleanText(el.xs.Review)),
-          ys: el.ys.Label,
-        }));
-      });
-      const valSeq = tensor2d(
-        this.textProcessing.padSequences(
-          validationData.map(val => val.xs),
-          this.config.maxSequenceLength
-        )
-      );
-      const valLab = oneHot(
-        tensor1d(
-          validationData.map(data => data.ys),
-          'int32'
-        ),
-        2
-      );
-      valSeq.print();
-      valLab.print();
       await this.prepareModelTraining();
       await this.trainingModel.fit(this.trainingSamples, this.trainingLabels, {
-        epochs: 2,
-        validationData: [valSeq, valLab],
+        epochs: 10,
+        validationSplit: 0.2,
       });
       const modelDirectory = join(process.cwd(), `${this.config.trainedModelUrl}/${modelType}`);
       if (!existsSync(modelDirectory)) mkdirSync(modelDirectory, { recursive: true });
@@ -265,7 +243,7 @@ export class SentimentAnalysisService {
     });
   }
 
-  private async prepareCsvDataset(): Promise<data.CSVDataset[]> {
+  private async prepareCsvDataset(): Promise<data.CSVDataset> {
     // const dataset = this.processingDataset
     //   .map(record =>
     //     Object.fromEntries(
@@ -288,15 +266,8 @@ export class SentimentAnalysisService {
           Label: { required: true, isLabel: true, dtype: 'int32' },
         },
       });
-      const validation = data.csv(`file://${validationDirectory}`, {
-        hasHeader: true,
-        columnConfigs: {
-          Review: { required: true, dtype: 'string' },
-          Label: { required: true, isLabel: true, dtype: 'int32' },
-        },
-      });
       try {
-        resolve([dataset, validation]);
+        resolve(dataset);
       } catch (error) {
         reject(error);
       }

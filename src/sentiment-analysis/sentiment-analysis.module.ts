@@ -11,7 +11,7 @@ import { SentimentAnalysisController } from './sentiment-analysis.controller';
     SentimentAnalysisService,
     {
       provide: Tokenizer,
-      useValue: new Tokenizer(100_000, '<OOV>'),
+      useValue: new Tokenizer(80_000, '<OOV>'),
     },
     TextProcessingHelper,
   ],
