@@ -103,7 +103,10 @@ export class SentimentAnalysisService {
     this.trainedModel = await loadLayersModel(
       `file://${this.config.trainedModelUrl}/${this.processingModelId}/model.json`
     );
-    if (process.env.NODE_ENV === 'development') this.trainedModel.summary();
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Model type used for prediction: ', this.processingModelId);
+      this.trainedModel.summary();
+    }
   }
 
   private async prepareModelTraining() {
