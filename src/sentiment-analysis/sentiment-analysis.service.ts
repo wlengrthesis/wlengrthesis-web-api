@@ -126,7 +126,9 @@ export class SentimentAnalysisService {
       case 'GRU':
         this.createGRUModel();
         break;
-      // TODO: create more models
+      case 'LSTM':
+        this.createLSTMModel();
+        break;
       default:
         break;
     }
@@ -187,6 +189,29 @@ export class SentimentAnalysisService {
     );
     this.trainingModel.add(layers.bidirectional({ layer: layers.gru({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.bidirectional({ layer: layers.gru({ units: 64, returnSequences: true }) }));
+    this.trainingModel.add(layers.globalAveragePooling1d());
+    this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
+    this.trainingModel.add(layers.dropout({ rate: 0.26 }));
+    this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
+    this.trainingModel.add(layers.dense({ units: 2, activation: 'sigmoid' }));
+    this.trainingModel.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
+    if (process.env.NODE_ENV === 'development') this.trainingModel.summary();
+  }
+
+  private createLSTMModel(vocabularySize?: number) {
+    if (!vocabularySize && !this.tokenizer.vocabularyActualSize) {
+      throw Error('Training model creation: size of vocabulary must be greater than zero');
+    }
+    this.trainingModel = sequential();
+    this.trainingModel.add(
+      layers.embedding({
+        inputDim: vocabularySize ? vocabularySize + 1 : this.tokenizer.vocabularyActualSize + 1,
+        outputDim: 16,
+        inputLength: this.config.maxSequenceLength,
+      })
+    );
+    this.trainingModel.add(layers.bidirectional({ layer: layers.lstm({ units: 64, returnSequences: true }) }));
+    this.trainingModel.add(layers.bidirectional({ layer: layers.lstm({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.globalAveragePooling1d());
     this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
     this.trainingModel.add(layers.dropout({ rate: 0.26 }));
