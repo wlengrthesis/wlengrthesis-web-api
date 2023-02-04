@@ -12,19 +12,23 @@ import {
   loadLayersModel,
   LayersModel,
   tidy,
-} from '@tensorflow/tfjs-node';
+  data,
+  TensorContainer,
+} from '@tensorflow/tfjs-node-gpu';
 import { createReadStream, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { parse } from 'csv-parse';
-import { ProcessingDataset, ICsvDataset, RequiredKeys, IPrediction } from './sentiment-analysis.types';
+import { ProcessingDataset, ICsvDataset, IPrediction } from './sentiment-analysis.types';
 import { Tokenizer, Vocabulary } from '../common/helpers/tokenizer';
 import { TextProcessingHelper } from '../common/helpers/text-processing.helper';
 import { PrismaClientService } from '../prisma-client/prisma-client.service';
+import v8 from 'node:v8';
 
 @Injectable()
 export class SentimentAnalysisService {
   private config = {
-    datasetUrl: 'dist/assets/dataset/amazon_products_consumer_reviews_dataset.csv',
+    datasetUrl: 'dist/assets/dataset/fixed_train2.csv',
+    validation: 'dist/assets/dataset/fixed_train1.csv',
     trainedModelUrl: 'dist/assets/trained-model',
     maxSequenceLength: 32,
   } as const;
@@ -42,17 +46,59 @@ export class SentimentAnalysisService {
     private tokenizer: Tokenizer,
     private textProcessing: TextProcessingHelper,
     private prisma: PrismaClientService
-  ) {}
+  ) {
+    console.log(v8.getHeapStatistics().heap_size_limit / (1024 * 1024));
+    this.runModelTraining();
+  }
 
-  async runModelTraining(modelType = 'RNN') {
+  async runModelTraining(modelType = 'GRU_LARGE') {
     if (process.env.NODE_ENV === 'development') {
       this.processingModelId = modelType;
-      await this.prepareModelTraining();
-      this.trainingSamples.print();
+      let dataset, validation: data.CSVDataset;
+      try {
+        [dataset, validation] = await this.prepareCsvDataset();
+      } catch (error) {
+        console.warn(error);
+      }
+      const convertedData = await dataset.toArray();
+      const sequences = this.tokenizer.fitOnTexts(convertedData.map(data => data.xs.Review));
+      this.trainingLabels = oneHot(
+        tensor1d(
+          convertedData.map(data => data.ys.Label),
+          'int32'
+        ),
+        2
+      ); // oneHotTensorDepth: number of possible values returned by encodeSentiment func
       this.trainingLabels.print();
+      this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
+      this.trainingSamples.print();
+      this.saveVocabulary();
+      let validationData = [];
+      await validation.toArray().then(array => {
+        validationData = array.map((el: any) => ({
+          xs: this.tokenizer.textToSequence(this.textProcessing.cleanText(el.xs.Review)),
+          ys: el.ys.Label,
+        }));
+      });
+      const valSeq = tensor2d(
+        this.textProcessing.padSequences(
+          validationData.map(val => val.xs),
+          this.config.maxSequenceLength
+        )
+      );
+      const valLab = oneHot(
+        tensor1d(
+          validationData.map(data => data.ys),
+          'int32'
+        ),
+        2
+      );
+      valSeq.print();
+      valLab.print();
+      await this.prepareModelTraining();
       await this.trainingModel.fit(this.trainingSamples, this.trainingLabels, {
-        epochs: 10,
-        validationSplit: 0.2,
+        epochs: 2,
+        validationData: [valSeq, valLab],
       });
       const modelDirectory = join(process.cwd(), `${this.config.trainedModelUrl}/${modelType}`);
       if (!existsSync(modelDirectory)) mkdirSync(modelDirectory, { recursive: true });
@@ -107,23 +153,23 @@ export class SentimentAnalysisService {
   }
 
   private async prepareModelTraining() {
-    try {
-      await this.loadCsvDataset();
-    } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(error);
-        return;
-      }
-      throw Error('Error in processing csv: ', error);
-    }
+    // try {
+    //   await this.loadCsvDataset();
+    // } catch (error) {
+    //   if (process.env.NODE_ENV === 'development') {
+    //     console.warn(error);
+    //     return;
+    //   }
+    //   throw Error('Error in processing csv: ', error);
+    // }
     if (process.env.NODE_ENV === 'development') {
       console.log('Actual tokenizer vocabulary size during model creation: ', this.tokenizer.vocabularyActualSize);
     }
     switch (this.processingModelId) {
-      case 'RNN':
+      case 'RNN_LARGE':
         this.createRNNModel();
         break;
-      case 'GRU':
+      case 'GRU_LARGE':
         this.createGRUModel();
         break;
       // TODO: create more models
@@ -164,7 +210,7 @@ export class SentimentAnalysisService {
     );
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
     this.trainingModel.add(layers.bidirectional({ layer: layers.simpleRNN({ units: 64, returnSequences: true }) }));
-    this.trainingModel.add(layers.globalAveragePooling1d());
+    this.trainingModel.add(layers.globalMaxPooling1d());
     this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
     this.trainingModel.add(layers.dropout({ rate: 0.26 }));
     this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
@@ -219,37 +265,42 @@ export class SentimentAnalysisService {
     });
   }
 
-  private prepareCsvDataset() {
-    const dataset = this.processingDataset
-      .map(record =>
-        Object.fromEntries(
-          Object.entries(record)
-            .filter(([key]) =>
-              (['reviews.text', 'reviews.rating', 'reviews.doRecommend'] as Array<keyof RequiredKeys>).includes(
-                key as keyof RequiredKeys
-              )
-            )
-            .filter(
-              ([key, value]) =>
-                ((key as keyof RequiredKeys) === 'reviews.rating' && value !== '') ||
-                ((key as keyof RequiredKeys) === 'reviews.text' && value !== '') ||
-                (key as keyof RequiredKeys) !== 'reviews.rating' ||
-                (key as keyof RequiredKeys) !== 'reviews.text'
-            )
-        )
-      )
-      .map(record => ({
-        ...record,
-        'reviews.text': this.textProcessing.cleanText(record['reviews.text']),
-      })) as ProcessingDataset[];
-    const sentiments = dataset.map(value => {
-      const sentiment = this.determineSentiment(value['reviews.rating'], value['reviews.doRecommend']);
-      return this.textProcessing.encodeSentiment(sentiment);
+  private async prepareCsvDataset(): Promise<data.CSVDataset[]> {
+    // const dataset = this.processingDataset
+    //   .map(record =>
+    //     Object.fromEntries(
+    //       Object.entries(record).filter(
+    //         ([key, value]) => (key === 'Review' && value !== '') || (key === 'Label' && value !== '')
+    //       )
+    //     )
+    //   )
+    //   .map(record => ({
+    //     Label: record['Label'],
+    //     Review: this.textProcessing.cleanText(record['Review']),
+    //   }));
+    const datasetDirectory = join(process.cwd(), this.config.datasetUrl);
+    const validationDirectory = join(process.cwd(), this.config.validation);
+    return new Promise((resolve, reject) => {
+      const dataset = data.csv(`file://${datasetDirectory}`, {
+        hasHeader: true,
+        columnConfigs: {
+          Review: { required: true, dtype: 'string' },
+          Label: { required: true, isLabel: true, dtype: 'int32' },
+        },
+      });
+      const validation = data.csv(`file://${validationDirectory}`, {
+        hasHeader: true,
+        columnConfigs: {
+          Review: { required: true, dtype: 'string' },
+          Label: { required: true, isLabel: true, dtype: 'int32' },
+        },
+      });
+      try {
+        resolve([dataset, validation]);
+      } catch (error) {
+        reject(error);
+      }
     });
-    const sequences = this.tokenizer.fitOnTexts(dataset.map(record => record['reviews.text']));
-    this.trainingLabels = oneHot(tensor1d(sentiments, 'int32'), 2); // oneHotTensorDepth: number of possible values returned by encodeSentiment func
-    this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
-    this.saveVocabulary();
   }
 
   private async saveVocabulary() {

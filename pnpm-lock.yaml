@@ -13,6 +13,7 @@ specifiers:
   '@nestjs/testing': ^9.2.1
   '@prisma/client': ^4.8.1
   '@tensorflow/tfjs-node': ^4.2.0
+  '@tensorflow/tfjs-node-gpu': ^4.2.0
   '@types/express': ^4.17.15
   '@types/jest': 29.2.5
   '@types/lodash': ^4.14.191
@@ -56,6 +57,7 @@ dependencies:
   '@nestjs/swagger': 6.1.4_4fhhxyztwhblafku3krlstrun4
   '@prisma/client': 4.9.0_prisma@4.9.0
   '@tensorflow/tfjs-node': 4.2.0
+  '@tensorflow/tfjs-node-gpu': 4.2.0
   argon2: 0.30.3
   class-transformer: 0.5.1
   class-validator: 0.14.0
@@ -1262,6 +1264,25 @@ packages:
       '@tensorflow/tfjs-core': 4.2.0
     dependencies:
       '@tensorflow/tfjs-core': 4.2.0
+    dev: false
+
+  /@tensorflow/tfjs-node-gpu/4.2.0:
+    resolution: {integrity: sha512-c8vMwvmEu1Qd85yxrxu+mNUxb102lLOMxZ4b71NDs5V8jvCs5lOVVu3cxoV76WwnVDFElEC0k4HmiUoCE3R9IA==}
+    engines: {node: '>=8.11.0'}
+    requiresBuild: true
+    dependencies:
+      '@mapbox/node-pre-gyp': 1.0.9
+      '@tensorflow/tfjs': 4.2.0
+      adm-zip: 0.5.10
+      google-protobuf: 3.21.2
+      https-proxy-agent: 2.2.4
+      progress: 2.0.3
+      rimraf: 2.7.1
+      tar: 4.4.19
+    transitivePeerDependencies:
+      - encoding
+      - seedrandom
+      - supports-color
     dev: false
 
   /@tensorflow/tfjs-node/4.2.0:

@@ -27,6 +27,7 @@
     "@nestjs/swagger": "^6.1.4",
     "@prisma/client": "^4.8.1",
     "@tensorflow/tfjs-node": "^4.2.0",
+    "@tensorflow/tfjs-node-gpu": "^4.2.0",
     "argon2": "^0.30.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
