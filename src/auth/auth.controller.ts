@@ -3,6 +3,7 @@ import { UserDto, Tokens } from './auth.types';
 import { AuthService } from './auth.service';
 import { AllowUnauthorizedRequest, GetCurrentUser } from './decorators';
 import { RefreshTokenGuard } from './guards';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 @Controller('auth')
 export class AuthController {
@@ -23,6 +24,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @ApiBearerAuth('token')
   @HttpCode(HttpStatus.OK)
   logout(@GetCurrentUser('sub') userId: number): Promise<boolean> {
     return this.authService.logout(userId);
@@ -31,6 +33,7 @@ export class AuthController {
   @AllowUnauthorizedRequest() // bypass global guard - AccessTokenGuard
   @UseGuards(RefreshTokenGuard)
   @Post('refresh')
+  @ApiBearerAuth('token')
   @HttpCode(HttpStatus.OK)
   refreshTokens(
     @GetCurrentUser('sub') userId: number,

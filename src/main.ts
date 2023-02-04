@@ -19,6 +19,17 @@ async function bootstrap() {
     .setTitle('Sentiment Analysis Web API')
     .setDescription('API to predict the analysis of provided text')
     .setVersion('1.0')
+    .addBearerAuth(
+      {
+        description: 'Please enter token in following format: Bearer <JWT>',
+        name: 'Authorization',
+        bearerFormat: 'Bearer',
+        scheme: 'Bearer',
+        type: 'http',
+        in: 'Header',
+      },
+      'token'
+    )
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);

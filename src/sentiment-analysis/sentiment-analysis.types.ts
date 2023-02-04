@@ -1,13 +1,20 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsString, MinLength, IsIn } from 'class-validator';
 
 const TEXT_MIN_LENGTH = 10;
 
+const modelTypes = ['GRU', 'RNN', 'LSTM'] as const;
+
+type ModelTypes = (typeof modelTypes)[number];
 export class AnalysisDto {
   @IsString()
   @MinLength(TEXT_MIN_LENGTH, {
     message: `The provided text is too short for the model to make an effective prediction. Min. length: ${TEXT_MIN_LENGTH}`,
   })
   text: string;
+
+  @IsString()
+  @IsIn(modelTypes)
+  modelType: ModelTypes = 'GRU';
 }
 
 export interface IPrediction {
