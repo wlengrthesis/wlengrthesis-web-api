@@ -47,7 +47,7 @@ lub
 $ yarn start
 ```
 
-API będzie dostępny w przeglądarce pod adresem: [localhost:4000](http://localhost:4000)
+API będzie dostępne w przeglądarce pod adresem: [localhost:4000](http://localhost:4000)
 
 ## Testy
 
@@ -63,7 +63,7 @@ Wpisz w **Request Body** dane w następującym formacie:
     "lastName": "Test1"
 }
 ```
-Po poprawnej rejestracji serwer zwróci token dostępu i token odświeżania. Użyj tokenu dostępu *access_token* w celu autoryzacji klikając w przycisk *Authorize*.
+Po poprawnej rejestracji serwer zwróci token dostępu i token odświeżania. Użyj tokenu dostępu *access_token* do autoryzacji klikając w przycisk *Authorize*.
 
 ### Predykcja sentymentu
 
@@ -71,7 +71,7 @@ Użyj endpointu *sentiment-analysis/predict* z **Request body**:
 
 ```json
 {
-  "text": "I am not happy"
+  "text": "I am happy english example text"
 }
 ```
 
