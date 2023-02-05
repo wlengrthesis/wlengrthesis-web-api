@@ -83,3 +83,6 @@ Jeśli serwer zwróci informację: *Cannot train model on production server. Use
 `NODE_ENV="development"`
 
  W konsoli pojawi się informacja o warstwach sieci neuronowej i uruchomi się trening.
+
+Predykcję sentymentu można przetestować również pod adresem: [wlengrthesis-web-api.onrender.com](https://wlengrthesis-web-api.onrender.com).
+Trening modelu ze względu na swoją złożoność obliczeniową w aplikacji online jest wyłączony.
