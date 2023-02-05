@@ -20,7 +20,8 @@ export class SentimentAnalysisController {
     return prediction;
   }
 
-  @Roles('SUPERADMIN')
+  @ApiBearerAuth('token')
+  @Roles('SUPERADMIN', 'USER') // TODO: temporary for USER
   @Get('train')
   train(): Promise<boolean> {
     return this.sentimentAnalysisService.runModelTraining();

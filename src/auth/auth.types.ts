@@ -12,10 +12,10 @@ export class UserDto {
 
   @IsString()
   @ValidateIf((_object, value) => value !== null)
-  firstName: string;
+  firstName: string | null = null;
   @IsString()
   @ValidateIf((_object, value) => value !== null)
-  lastName: string;
+  lastName: string | null = null;
 }
 
 export type Tokens = {
