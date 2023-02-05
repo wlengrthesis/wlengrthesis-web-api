@@ -13,10 +13,9 @@ import {
   LayersModel,
   tidy,
   data,
-  TensorContainer,
 } from '@tensorflow/tfjs-node';
-import { createReadStream, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { createReadStream, existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { parse } from 'csv-parse';
 import { ProcessingDataset, ICsvDataset, IPrediction } from './sentiment-analysis.types';
 import { Tokenizer, Vocabulary } from '../common/helpers/tokenizer';
@@ -33,7 +32,6 @@ export class SentimentAnalysisService {
     maxSequenceLength: 32,
   } as const;
 
-  private processingDataset: ProcessingDataset[] = [];
   private processingModelId = 'RNN';
 
   private trainingLabels: Tensor<Rank>;
@@ -51,7 +49,7 @@ export class SentimentAnalysisService {
     this.runModelTraining();
   }
 
-  async runModelTraining(modelType = 'GRU_LARGE') {
+  async runModelTraining(modelType = 'RNN') {
     if (process.env.NODE_ENV === 'development') {
       this.processingModelId = modelType;
       let dataset: data.CSVDataset;
@@ -69,8 +67,8 @@ export class SentimentAnalysisService {
         ),
         2
       ); // oneHotTensorDepth: number of possible values returned by encodeSentiment func
-      this.trainingLabels.print();
       this.trainingSamples = tensor2d(this.textProcessing.padSequences(sequences, this.config.maxSequenceLength));
+      this.trainingLabels.print();
       this.trainingSamples.print();
       this.saveVocabulary();
       await this.prepareModelTraining();
@@ -131,26 +129,19 @@ export class SentimentAnalysisService {
   }
 
   private async prepareModelTraining() {
-    // try {
-    //   await this.loadCsvDataset();
-    // } catch (error) {
-    //   if (process.env.NODE_ENV === 'development') {
-    //     console.warn(error);
-    //     return;
-    //   }
-    //   throw Error('Error in processing csv: ', error);
-    // }
     if (process.env.NODE_ENV === 'development') {
       console.log('Actual tokenizer vocabulary size during model creation: ', this.tokenizer.vocabularyActualSize);
     }
     switch (this.processingModelId) {
-      case 'RNN_LARGE':
+      case 'RNN':
         this.createRNNModel();
         break;
-      case 'GRU_LARGE':
+      case 'GRU':
         this.createGRUModel();
         break;
-      // TODO: create more models
+      case 'LSTM':
+        this.createLSTMModel();
+        break;
       default:
         break;
     }
@@ -194,7 +185,36 @@ export class SentimentAnalysisService {
     this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
     this.trainingModel.add(layers.dense({ units: 2, activation: 'sigmoid' }));
     this.trainingModel.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
-    if (process.env.NODE_ENV === 'development') this.trainingModel.summary();
+    if (process.env.NODE_ENV === 'development') {
+      console.log(this.processingModelId);
+      this.trainingModel.summary();
+    }
+  }
+
+  private createLSTMModel(vocabularySize?: number) {
+    if (!vocabularySize && !this.tokenizer.vocabularyActualSize) {
+      throw Error('Training model creation: size of vocabulary must be greater than zero');
+    }
+    this.trainingModel = sequential();
+    this.trainingModel.add(
+      layers.embedding({
+        inputDim: vocabularySize ? vocabularySize + 1 : this.tokenizer.vocabularyActualSize + 1,
+        outputDim: 16,
+        inputLength: this.config.maxSequenceLength,
+      })
+    );
+    this.trainingModel.add(layers.bidirectional({ layer: layers.lstm({ units: 64, returnSequences: true }) }));
+    this.trainingModel.add(layers.bidirectional({ layer: layers.lstm({ units: 64, returnSequences: true }) }));
+    this.trainingModel.add(layers.globalMaxPooling1d());
+    this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
+    this.trainingModel.add(layers.dropout({ rate: 0.26 }));
+    this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
+    this.trainingModel.add(layers.dense({ units: 2, activation: 'sigmoid' }));
+    this.trainingModel.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
+    if (process.env.NODE_ENV === 'development') {
+      console.log(this.processingModelId);
+      this.trainingModel.summary();
+    }
   }
 
   private createGRUModel(vocabularySize?: number) {
@@ -217,7 +237,10 @@ export class SentimentAnalysisService {
     this.trainingModel.add(layers.dense({ units: 32, activation: 'relu' }));
     this.trainingModel.add(layers.dense({ units: 2, activation: 'sigmoid' }));
     this.trainingModel.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
-    if (process.env.NODE_ENV === 'development') this.trainingModel.summary();
+    if (process.env.NODE_ENV === 'development') {
+      console.log(this.processingModelId);
+      this.trainingModel.summary();
+    }
   }
 
   private async loadCsvDataset() {
@@ -230,11 +253,12 @@ export class SentimentAnalysisService {
         })
         .on('end', () => {
           const keys = records.shift();
-          this.processingDataset = records.map(record =>
+          const dataset = records.map(record =>
             record.reduce<ICsvDataset>((accumulator, value, index) => {
               return { ...accumulator, [keys[index]]: value };
             }, {} as ICsvDataset)
           );
+          console.log(dataset.length);
           resolve(this.prepareCsvDataset());
         })
         .on('error', error => {
@@ -244,20 +268,9 @@ export class SentimentAnalysisService {
   }
 
   private async prepareCsvDataset(): Promise<data.CSVDataset> {
-    // const dataset = this.processingDataset
-    //   .map(record =>
-    //     Object.fromEntries(
-    //       Object.entries(record).filter(
-    //         ([key, value]) => (key === 'Review' && value !== '') || (key === 'Label' && value !== '')
-    //       )
-    //     )
-    //   )
-    //   .map(record => ({
-    //     Label: record['Label'],
-    //     Review: this.textProcessing.cleanText(record['Review']),
-    //   }));
     const datasetDirectory = join(process.cwd(), this.config.datasetUrl);
     const validationDirectory = join(process.cwd(), this.config.validation);
+    console.log(validationDirectory);
     return new Promise((resolve, reject) => {
       const dataset = data.csv(`file://${datasetDirectory}`, {
         hasHeader: true,
@@ -286,17 +299,6 @@ export class SentimentAnalysisService {
       .catch(error => {
         if (process.env.NODE_ENV === 'development') console.warn(error);
       });
-  }
-
-  private determineSentiment(
-    rating: ProcessingDataset['reviews.rating'],
-    doRecommend: ProcessingDataset['reviews.doRecommend']
-  ) {
-    if (Number(rating) >= 4) return 'positive';
-    if (rating === '3' && !!doRecommend) return 'positive';
-    if (rating === '3') return 'negative';
-    if (Number(rating) <= 2) return 'negative';
-    throw Error('Rating must be a number');
   }
 
   private disposeTensors() {
