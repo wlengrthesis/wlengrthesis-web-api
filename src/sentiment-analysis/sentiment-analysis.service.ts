@@ -17,7 +17,7 @@ import {
 import { createReadStream, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'csv-parse';
-import { ProcessingDataset, ICsvDataset, IPrediction } from './sentiment-analysis.types';
+import { ICsvDataset, IPrediction } from './sentiment-analysis.types';
 import { Tokenizer, Vocabulary } from '../common/helpers/tokenizer';
 import { TextProcessingHelper } from '../common/helpers/text-processing.helper';
 import { PrismaClientService } from '../prisma-client/prisma-client.service';
