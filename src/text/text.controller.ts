@@ -17,6 +17,6 @@ export class TextController {
   @Roles('SUPERADMIN', 'ADMIN', 'USER')
   @Get(':id/all')
   getAllByUserId(@Param('id') userId: TextDto['userId']): Promise<TextDto[]> {
-    return this.textService.getMany({ where: { userId } });
+    return this.textService.getMany({ where: { userId: Number(userId) } });
   }
 }
